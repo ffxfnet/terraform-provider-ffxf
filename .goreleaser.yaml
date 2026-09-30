@@ -1,0 +1,46 @@
+version: 2
+
+project_name: terraform-provider-ffxf
+
+builds:
+  - id: provider
+    main: .
+    binary: "{{ .ProjectName }}_v{{ .Version }}"
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - "-s -w -X main.version={{ .Version }}"
+
+archives:
+  - formats:
+      - zip
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
+  algorithm: sha256
+
+signs:
+  - cmd: gpg
+    args:
+      - --batch
+      - --yes
+      - --pinentry-mode
+      - loopback
+      - --passphrase
+      - "{{ .Env.GPG_PASSPHRASE }}"
+      - --local-user
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - --output
+      - "${signature}"
+      - --detach-sign
+      - "${artifact}"
+    artifacts: checksum
