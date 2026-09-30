@@ -1,8 +1,39 @@
-# ffxf-terraform-provider
-The terraform provider for ffxf
+# terraform-provider-ffxf
 
-## OpenTofu releases
+Manage FFXF Cloud virtual machines with OpenTofu. Define instance configuration in HCL and let OpenTofu create, update, refresh, and destroy the resources to match your configuration.
 
-Pushing a version tag such as `v1.2.3` runs GoReleaser and publishes the platform archives, a SHA-256 checksum file, and its GPG signature to GitHub Releases. OpenTofu Registry can then consume that release after the provider has been registered there.
+The provider currently supports the `ffxf_instance` resource. It creates a VM from a plan, region, image, and hostname, tracks its assigned ID and IPv4 address, and updates hostname changes in place. Changes to plan, region, image, or billing require the instance to be replaced.
 
-Configure the repository secrets `GPG_PRIVATE_KEY` and `GPG_PASSPHRASE` with the release signing key. Publish the matching public key with the OpenTofu Registry provider listing so it can verify the signed checksums.
+## Configuration
+
+Provide an FFXF Cloud API token in the provider configuration or set the `FFXF_TOKEN` environment variable. The API endpoint is optional; it defaults to `https://api.ffxf.net/v1`. Set `FFXF_ENDPOINT` to override it through the environment.
+
+```hcl
+terraform {
+	required_providers {
+		ffxf = {
+			source = "ffxfnet/ffxf"
+		}
+	}
+}
+
+variable "ffxf_token" {
+	type      = string
+	sensitive = true
+}
+
+provider "ffxf" {
+	token = var.ffxf_token
+	# endpoint = "https://api.ffxf.net/v1"
+}
+
+resource "ffxf_instance" "web" {
+	hostname = "web-server-01"
+	plan     = "nano"
+	region   = "montreal"
+	image    = "debian-13"
+	billing  = "hourly"
+}
+```
+
+The `billing` argument is optional and defaults to `hourly`. The provider also accepts `FFXF_TOKEN` instead of setting `token` in the provider block. Mark the variable holding your token as sensitive and avoid committing credentials to version control.

@@ -10,7 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/ffxf/ffxf-terraform-provider/internal/client"
+	"github.com/ffxfnet/terraform-provider-ffxf/internal/client"
 )
 
 var _ provider.Provider = &FFXFProvider{}

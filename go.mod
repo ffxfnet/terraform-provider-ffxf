@@ -1,4 +1,4 @@
-module github.com/ffxf/ffxf-terraform-provider
+module github.com/ffxfnet/terraform-provider-ffxf
 
 go 1.27.1
 

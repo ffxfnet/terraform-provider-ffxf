@@ -10,7 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/ffxf/ffxf-terraform-provider/internal/client"
+	"github.com/ffxfnet/terraform-provider-ffxf/internal/client"
 )
 
 func TestInstanceReadRefreshesState(t *testing.T) {

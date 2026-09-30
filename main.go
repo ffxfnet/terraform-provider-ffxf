@@ -5,7 +5,7 @@ import (
 	"flag"
 	"log"
 
-	"github.com/ffxf/ffxf-terraform-provider/internal/provider"
+	"github.com/ffxfnet/terraform-provider-ffxf/internal/provider"
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 )
 
@@ -17,7 +17,7 @@ func main() {
 	flag.Parse()
 
 	opts := providerserver.ServeOpts{
-		Address: "registry.opentofu.org/ffxf/ffxf",
+		Address: "registry.opentofu.org/ffxfnet/ffxf",
 	}
 
 	err := providerserver.Serve(context.Background(), provider.New(version), opts)
