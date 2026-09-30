@@ -27,6 +27,7 @@ jobs:
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          git_config_global: true
 
       - name: Build and publish release
         uses: goreleaser/goreleaser-action@v6
@@ -37,3 +38,5 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_FINGERPRINT: ${{ steps.signing-key.outputs.fingerprint }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          # Avoid "gpg: cannot open tty '/dev/tty': No such device or address" error
+          GPG_TTY: $(tty)
