@@ -1,0 +1,1657 @@
+openapi: 3.1.0
+
+info:
+  title: FFXF Cloud API
+  version: 1.0.0-draft.1
+  summary: Order and operate FFXF virtual machines from your own code.
+  description: |
+    This API and the console at `console.ffxf.net` share one code path. The same
+    catalogue, the same quota, the same credit rules: whatever the browser
+    refuses is refused here, with the same reason.
+
+    ## Billing
+
+    A machine is billed either by the hour or by the month. The mode is chosen
+    at creation and does not change afterwards.
+
+    **Hourly** draws on prepaid credit. The hour is paid at its start, so every
+    hour started is owed and the balance never goes negative. An order is
+    accepted only when the balance covers the first 24 hours. When the credit
+    runs out the machine is stopped and its disk is kept for 7 days — top up
+    within that window and the machine restarts where it left off.
+
+    **Monthly** raises an invoice. The machine is provisioned once the invoice
+    is paid: from credit when the balance covers it, otherwise by following the
+    payment link returned with the order.
+
+    ## Actions are asynchronous
+
+    Provisioning, reinstalling and power changes are queued. Those endpoints
+    answer `202` with an `action` object; poll `GET /actions/{action}` until its
+    status leaves `running`. An action carries the failure reason when it ends
+    in `error`. No action stays open forever: one that has not concluded within
+    six hours is closed as `error` with the code `internal_error`.
+
+    ## Idempotency
+
+    `POST /vms` requires an `Idempotency-Key` header: a value of your choosing,
+    unique per order. Replaying the same key returns the first response with
+    `Idempotency-Replayed: true` instead of creating a second machine. Sending
+    the same key with a different body is refused (`idempotency_conflict`).
+    Keys are kept 24 hours.
+
+    ## Rate limits
+
+    Per key: 120 reads a minute, 20 actions a minute, and 10 creations or
+    reinstalls an hour. Every response carries `X-RateLimit-Limit` and
+    `X-RateLimit-Remaining` for the bucket the call fell in; a rejected request
+    answers `429` with `Retry-After`.
+
+    A coarser guard also applies per calling address, before authentication. A
+    single client never meets it; a script guessing tokens does.
+
+    ## Conventions
+
+    Timestamps are UTC, ISO 8601. Money is a decimal string with an explicit
+    currency code — never a float. Lists are paginated by cursor. Every
+    response carries `X-Request-Id`; quote it when contacting support.
+  contact:
+    name: FFXF support
+    url: https://ffxf.net/docs
+    email: support@ffxf.net
+  termsOfService: https://ffxf.net/legal
+  license:
+    name: Proprietary
+    identifier: LicenseRef-FFXF
+
+servers:
+  # L'adresse à donner aux clients. Le chemin sous la console reste servi par
+  # la même application — il dépanne si le nom dédié tombe, il ne se cite pas.
+  - url: https://api.ffxf.net/v1
+    description: Production
+  - url: https://console.ffxf.net/api/v1
+    description: Production (même application, adresse de repli)
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Catalog
+    description: Regions, plans and images. Readable without a key.
+  - name: Machines
+    description: Create, inspect and destroy virtual machines.
+  - name: Actions
+    description: Power state, reinstall, and the queue behind them.
+  - name: Networking
+    description: Addresses, IPv6 prefix and reverse DNS.
+  - name: Backups
+    description: Automatic and manual backups.
+  - name: Account
+    description: Credit, burn rate, budget, quota and usage.
+  - name: SSH keys
+    description: Public keys reusable across machines.
+
+paths:
+  /regions:
+    get:
+      tags: [Catalog]
+      summary: List regions
+      description: Where machines can run. A plan or an image may not be offered everywhere.
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Region' }
+              example:
+                data:
+                  - slug: montreal
+                    name: Montreal
+                    country: CA
+                    status: available
+                    ipv6: true
+
+  /plans:
+    get:
+      tags: [Catalog]
+      summary: List plans
+      security: []
+      parameters:
+        - name: region
+          in: query
+          description: Keep only the plans offered in this region.
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Plan' }
+              example:
+                data:
+                  - slug: nano
+                    name: Nano
+                    description: VPN, DNS, bots, small lightweight services.
+                    vcpu: 1
+                    memory_mb: 2048
+                    disk_gb: 20
+                    traffic_tb: 1
+                    port_mbps: 1000
+                    regions: [montreal]
+                    status: available
+                    prices:
+                      - currency: CAD
+                        hourly: '0.018'
+                        hourly_month_equivalent: '13.14'
+                        monthly: '8.50'
+                        annual: '85.00'
+                        setup_fee: '0.00'
+
+  /plans/{plan}:
+    get:
+      tags: [Catalog]
+      summary: Get a plan
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/PlanSlug'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Plan' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /images:
+    get:
+      tags: [Catalog]
+      summary: List images
+      description: |
+        The image referential. `slug` is the stable identifier to pass at
+        creation; it means the same image in every region. Numeric template ids
+        are internal and never appear here.
+
+        A slug reads as family and version: `debian-13`, `ubuntu-24-04`,
+        `freebsd-15-1`, `windows-2022`. An application image is named after
+        itself, not after the distribution it carries (`n8n`, `docker`), and one
+        that runs on a Windows edition names both
+        (`metatrader-5-windows-2022`). A rolling release carries no version
+        (`arch`).
+
+        An image carries its own floor: `min_disk_gb` and `min_memory_mb`. A
+        plan below that floor cannot run it — Proxmox does not shrink a clone,
+        and an application image below its memory floor dies on boot.
+      security: []
+      parameters:
+        - name: region
+          in: query
+          description: Keep only the images available in this region.
+          schema: { type: string }
+        - name: plan
+          in: query
+          description: Keep only the images that fit this plan.
+          schema: { type: string }
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [linux, windows, bsd, app, other]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Image' }
+              example:
+                data:
+                  - slug: debian-13
+                    name: Debian 13 · Trixie
+                    family: debian
+                    category: linux
+                    version: '13'
+                    status: available
+                    regions: [montreal]
+                    min_disk_gb: null
+                    min_memory_mb: null
+                    default_user: debian
+                    supports_ssh_keys: true
+                  - slug: windows-2022
+                    name: Windows Server 2022
+                    family: windows
+                    category: windows
+                    version: '2022'
+                    status: available
+                    regions: [montreal]
+                    min_disk_gb: 32
+                    min_memory_mb: 4096
+                    default_user: Administrator
+                    supports_ssh_keys: false
+
+  /images/{image}:
+    get:
+      tags: [Catalog]
+      summary: Get an image
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ImageSlug'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Image' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /vms:
+    get:
+      tags: [Machines]
+      summary: List machines
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/VmStatus' }
+        - name: region
+          in: query
+          schema: { type: string }
+        - name: billing
+          in: query
+          schema: { type: string, enum: [hourly, monthly] }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Vm' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Machines]
+      summary: Create a machine
+      description: |
+        Runs the same checks as the console, in this order: account standing,
+        plan and image availability, image floor against the plan, quota, then
+        credit. A refusal names the check that failed.
+
+        Hourly: the first hour is charged inside the order transaction. If that
+        charge fails, nothing is created — never a machine without a paid hour.
+
+        Monthly: an invoice is raised. With `payment: credit` and enough
+        balance, it is settled at once and provisioning starts; otherwise the
+        machine stays `pending_payment` and the response carries the invoice.
+
+        Use `dry_run` to price an order and run every check without creating
+        anything.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateVmRequest' }
+            examples:
+              hourly:
+                summary: Hourly machine, key-only access
+                value:
+                  plan: nano
+                  region: montreal
+                  image: debian-13
+                  hostname: runner-01
+                  billing: hourly
+                  ssh_keys: [SHA256:0mR1vP…]
+                  password_delivery: none
+              monthly:
+                summary: Monthly machine paid from credit
+                value:
+                  plan: starter
+                  region: montreal
+                  image: ubuntu-24-04
+                  hostname: app-prod
+                  billing: monthly
+                  payment: credit
+              estimate:
+                summary: Price it without ordering
+                value:
+                  plan: nano
+                  region: montreal
+                  image: debian-13
+                  hostname: probe
+                  billing: hourly
+                  dry_run: true
+      responses:
+        '202':
+          description: |
+            Order accepted. `action` follows the provisioning; it is null when
+            the machine waits for payment.
+          headers:
+            Idempotency-Replayed: { $ref: '#/components/headers/IdempotencyReplayed' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateVmResponse' }
+              example:
+                data:
+                  vm:
+                    id: 4312
+                    hostname: runner-01
+                    status: provisioning
+                    plan: nano
+                    region: montreal
+                    image: debian-13
+                    billing:
+                      mode: hourly
+                      currency: CAD
+                      hourly:
+                        rate: '0.018'
+                        month_equivalent: '13.14'
+                        started_at: '2026-09-20T18:04:11Z'
+                        billed_through_at: '2026-09-20T19:04:11Z'
+                        hours_billed: 1
+                        amount_billed: '0.018'
+                        state: active
+                  action:
+                    id: 90112
+                    type: create
+                    status: running
+                    vm_id: 4312
+                  invoice: null
+        '200':
+          description: 'Estimate returned (`dry_run: true`). Nothing was created.'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Estimate' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '402': { $ref: '#/components/responses/PaymentRequired' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /vms/{vm}:
+    get:
+      tags: [Machines]
+      summary: Get a machine
+      parameters:
+        - $ref: '#/components/parameters/VmId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Vm' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Machines]
+      summary: Update a machine
+      description: |
+        Only the hostname is editable. It is applied inside the guest and to the
+        machine's DNS name; the change takes effect on the next boot for images
+        that set the hostname at boot.
+      parameters:
+        - $ref: '#/components/parameters/VmId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                hostname: { $ref: '#/components/schemas/Hostname' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Vm' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Machines]
+      summary: Destroy a machine
+      description: |
+        Destroys the machine and its disk. There is no undo and no backup is
+        kept beyond the ones already taken.
+
+        Hourly: immediate. The meter closes; the hour under way is owed and not
+        refunded.
+
+        Monthly: this files a cancellation. `when=period_end` (the default)
+        keeps the machine until the paid period ends; `when=now` destroys it at
+        once, without refund.
+
+        `confirm` must repeat the machine's hostname — a guard against a
+        mistyped id in a script.
+      parameters:
+        - $ref: '#/components/parameters/VmId'
+        - name: confirm
+          in: query
+          required: true
+          description: The machine's exact hostname.
+          schema: { type: string }
+        - name: when
+          in: query
+          description: Monthly machines only.
+          schema:
+            type: string
+            enum: [period_end, now]
+            default: period_end
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      action: { $ref: '#/components/schemas/Action' }
+        '400': { $ref: '#/components/responses/ValidationFailed' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /vms/{vm}/actions:
+    get:
+      tags: [Actions]
+      summary: List a machine's actions
+      parameters:
+        - $ref: '#/components/parameters/VmId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Action' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+    post:
+      tags: [Actions]
+      summary: Act on a machine
+      description: |
+        `start`, `shutdown`, `reboot` ask the guest politely. `stop` cuts the
+        power — data not yet written is lost. `reinstall` wipes the disk and
+        redeploys the chosen image.
+
+        A suspended machine refuses every action until the cause is cleared
+        (`service_suspended`); the machine's `suspension` block names the cause.
+        A reinstall already under way refuses a second one (`action_conflict`).
+      parameters:
+        - $ref: '#/components/parameters/VmId'
+        - $ref: '#/components/parameters/IdempotencyKeyOptional'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/PowerActionRequest'
+                - $ref: '#/components/schemas/ReinstallActionRequest'
+              discriminator:
+                propertyName: type
+            examples:
+              reboot:
+                value: { type: reboot }
+              reinstall:
+                summary: Reinstall on another image, key-only
+                value:
+                  type: reinstall
+                  image: ubuntu-24-04
+                  ssh_keys: [SHA256:0mR1vP…]
+                  password_delivery: none
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      action: { $ref: '#/components/schemas/Action' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/BackendUnavailable' }
+
+  /actions:
+    get:
+      tags: [Actions]
+      summary: List actions
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ActionStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Action' }
+                  meta: { $ref: '#/components/schemas/PageMeta' }
+
+  /actions/{action}:
+    get:
+      tags: [Actions]
+      summary: Get an action
+      description: Poll this until `status` leaves `running`. A completed action is kept 30 days.
+      parameters:
+        - name: action
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Action' }
+              examples:
+                failed:
+                  value:
+                    data:
+                      id: 90112
+                      type: create
+                      status: error
+                      vm_id: 4312
+                      error:
+                        code: provisioning_failed
+                        message: No IPv4 address left in the pool for this region.
+                      created_at: '2026-09-20T18:04:11Z'
+                      finished_at: '2026-09-20T18:05:02Z'
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /vms/{vm}/metrics:
+    get:
+      tags: [Machines]
+      summary: Get machine metrics
+      description: CPU, memory, disk and network, as sampled by the hypervisor.
+      parameters:
+        - $ref: '#/components/parameters/VmId'
+        - name: timeframe
+          in: query
+          schema:
+            type: string
+            enum: [hour, day, week, month, year]
+            default: hour
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Metrics' }
+        '503': { $ref: '#/components/responses/BackendUnavailable' }
+
+  /vms/{vm}/console:
+    post:
+      tags: [Machines]
+      summary: Open a console session
+      description: |
+        Returns a single-use URL to the VNC console, valid for a few minutes.
+        The handle burns on first use; ask for another one to reconnect.
+      parameters:
+        - $ref: '#/components/parameters/VmId'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/ConsoleSession' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /vms/{vm}/network:
+    get:
+      tags: [Networking]
+      summary: Get a machine's addresses
+      parameters:
+        - $ref: '#/components/parameters/VmId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Network' }
+
+  /vms/{vm}/network/ipv6:
+    post:
+      tags: [Networking]
+      summary: Add an address from the machine's IPv6 prefix
+      description: |
+        Each machine carries a routed /64. An address taken here is registered
+        against the anti-spoofing filter; an address configured in the guest but
+        not registered will not reach the network.
+      parameters:
+        - $ref: '#/components/parameters/VmId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address]
+              properties:
+                address:
+                  type: string
+                  description: Full address inside the machine's prefix.
+                  examples: ['2607:5300:abcd:ef00::42']
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/IpAddress' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /vms/{vm}/network/ipv6/{address}:
+    delete:
+      tags: [Networking]
+      summary: Release an IPv6 address
+      parameters:
+        - $ref: '#/components/parameters/VmId'
+        - name: address
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Released }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /vms/{vm}/network/rdns:
+    put:
+      tags: [Networking]
+      summary: Set reverse DNS on an address
+      parameters:
+        - $ref: '#/components/parameters/VmId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address]
+              properties:
+                address: { type: string }
+                hostname:
+                  type: [string, 'null']
+                  description: Null clears the record and restores the default.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/IpAddress' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /vms/{vm}/backups:
+    get:
+      tags: [Backups]
+      summary: List backups
+      parameters:
+        - $ref: '#/components/parameters/VmId'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Backup' }
+                  meta:
+                    type: object
+                    properties:
+                      automatic_enabled: { type: boolean }
+                      retention: { type: integer }
+
+  /vms/{vm}/backups/{backup}/restore:
+    post:
+      tags: [Backups]
+      summary: Restore a backup
+      description: Overwrites the current disk. The machine is stopped for the duration.
+      parameters:
+        - $ref: '#/components/parameters/VmId'
+        - name: backup
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      action: { $ref: '#/components/schemas/Action' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /vms/{vm}/backups/{backup}:
+    delete:
+      tags: [Backups]
+      summary: Delete a backup
+      parameters:
+        - $ref: '#/components/parameters/VmId'
+        - name: backup
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /account:
+    get:
+      tags: [Account]
+      summary: Get account standing
+      description: |
+        Everything an automated fleet needs to decide on its own: balance, what
+        it burns per hour, how long that lasts, the budget it set itself and the
+        machine quota.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Account' }
+              example:
+                data:
+                  currency: CAD
+                  billing_mode: prepaid
+                  credit:
+                    balance: '124.60'
+                  hourly:
+                    burn_rate: '0.069'
+                    runway_hours: 1805.8
+                    active_machines: 3
+                  budget:
+                    monthly: '200.00'
+                    month_to_date: '38.12'
+                    percent: 19.1
+                    cap_percent: 120
+                  quota:
+                    limit: 5
+                    used: 3
+                    remaining: 2
+                  auto_topup:
+                    enabled: true
+                    threshold: '25.00'
+                    amount: '100.00'
+
+  /usage:
+    get:
+      tags: [Account]
+      summary: List hourly usage
+      description: |
+        One record per hour charged, per machine. This is the ledger the
+        invoices and the console summary are both built from.
+      parameters:
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: vm_id
+          in: query
+          schema: { type: integer }
+        - name: group_by
+          in: query
+          description: Return one line per machine instead of one per hour.
+          schema: { type: string, enum: [hour, vm] , default: hour }
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/UsageRecord' }
+                  meta:
+                    allOf:
+                      - $ref: '#/components/schemas/PageMeta'
+                      - type: object
+                        properties:
+                          total: { $ref: '#/components/schemas/Money' }
+                          currency: { type: string }
+
+  /ssh-keys:
+    get:
+      tags: [SSH keys]
+      summary: List SSH keys
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/SshKey' }
+    post:
+      tags: [SSH keys]
+      summary: Add an SSH key
+      description: Up to 20 keys per account. Re-adding a known fingerprint returns the existing key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, public_key]
+              properties:
+                name: { type: string, maxLength: 64 }
+                public_key: { type: string, maxLength: 8192 }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/SshKey' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  /ssh-keys/{key}:
+    delete:
+      tags: [SSH keys]
+      summary: Delete an SSH key
+      description: Machines already deployed with this key keep it; only future deployments change.
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '204': { description: Deleted }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        A key created in the console, under Account → API keys, and sent as
+        `Authorization: Bearer ffxf_live_…`. The key is shown once, at creation.
+
+        Each key carries its own scopes and, optionally, a list of allowed IP
+        addresses. Scopes: `catalog.read`, `vms.read`, `vms.create`,
+        `vms.action`, `vms.destroy`, `vms.console`, `network.write`,
+        `backups.write`, `billing.read`, `sshkeys.write`. A call outside a
+        key's scopes answers `403 insufficient_scope`.
+
+        A key acts as the account that owns it: same quota, same credit, same
+        suspensions. It grants no access to invoices, payment methods or
+        tickets.
+
+  parameters:
+    VmId:
+      name: vm
+      in: path
+      required: true
+      description: |
+        The machine id. A machine is identified by its service: the id exists
+        from the moment you order — before any disk is cloned — and it survives
+        a reinstall, which replaces the virtual machine but not the machine you
+        pay for.
+      schema: { type: integer }
+    PlanSlug:
+      name: plan
+      in: path
+      required: true
+      schema: { type: string }
+      example: nano
+    ImageSlug:
+      name: image
+      in: path
+      required: true
+      schema: { type: string }
+      example: debian-13
+    Cursor:
+      name: cursor
+      in: query
+      description: The `next_cursor` from the previous page.
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Unique per order, your own value. Kept 24 hours.
+      schema: { type: string, maxLength: 255 }
+    IdempotencyKeyOptional:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string, maxLength: 255 }
+
+  headers:
+    IdempotencyReplayed:
+      description: Present and true when the response is a replay of an earlier identical request.
+      schema: { type: boolean }
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema: { type: integer }
+
+  responses:
+    Unauthorized:
+      description: Missing, unknown, disabled or expired key.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: invalid_api_key
+              message: The provided API key is invalid or has been disabled.
+              request_id: req_8Fh2kQ
+    Forbidden:
+      description: Key out of scope, IP not allowed, e-mail unverified or account suspended.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    PaymentRequired:
+      description: |
+        Not enough credit, or a budget cap reached. An hourly order needs the
+        first 24 hours in credit; `details` says how much is missing.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: insufficient_credit
+              message: This order needs 0.44 CAD of credit; the balance is 0.12 CAD.
+              details:
+                required: '0.44'
+                balance: '0.12'
+                missing: '0.32'
+                currency: CAD
+                hours_covered: 24
+              request_id: req_8Fh2kQ
+    NotFound:
+      description: No such resource, or it does not belong to this account.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationFailed:
+      description: Malformed request.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: validation_failed
+              message: The request could not be validated.
+              details:
+                hostname: Only letters, digits, dots and hyphens; no two in a row.
+              request_id: req_8Fh2kQ
+    Conflict:
+      description: |
+        The resource is not in a state that allows this: machine suspended,
+        reinstall already running, quota reached, or an idempotency key reused
+        with a different body.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: quota_reached
+              message: This account is limited to 5 machines. Ask support to raise it.
+              details:
+                limit: 5
+                used: 5
+              request_id: req_8Fh2kQ
+    Unprocessable:
+      description: |
+        The request is well formed but the catalogue refuses it: image below the
+        plan's floor, image or plan not offered in that region, out of stock.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            error:
+              code: image_incompatible_with_plan
+              message: windows-2022 needs 32 GB of disk; nano offers 20 GB.
+              details:
+                image: windows-2022
+                plan: nano
+                min_disk_gb: 32
+                plan_disk_gb: 20
+                compatible_plans: [starter, pro, scale]
+              request_id: req_8Fh2kQ
+    RateLimited:
+      description: Too many requests.
+      headers:
+        Retry-After: { $ref: '#/components/headers/RetryAfter' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    BackendUnavailable:
+      description: The hypervisor did not answer. Nothing was changed; retry.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+
+    Money:
+      type: string
+      description: Decimal amount as a string, to avoid float rounding.
+      examples: ['0.018', '8.50']
+
+    Hostname:
+      type: string
+      maxLength: 128
+      pattern: '^(?!.*[.-]{2})[a-zA-Z0-9]([a-zA-Z0-9.-]{0,126}[a-zA-Z0-9])?$'
+      examples: [runner-01]
+
+    PageMeta:
+      type: object
+      properties:
+        next_cursor: { type: [string, 'null'] }
+        has_more: { type: boolean }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { $ref: '#/components/schemas/ErrorCode' }
+            message:
+              type: string
+              description: English, meant for a log. Localise from `code`, not from this.
+            details:
+              type: object
+              additionalProperties: true
+            request_id: { type: string }
+
+    ErrorCode:
+      type: string
+      description: |
+        Stable machine-readable reason. New codes may be added; treat an unknown
+        code as a plain failure of its HTTP class.
+      enum:
+        - missing_token
+        - invalid_api_key
+        - key_disabled
+        - key_expired
+        - insufficient_scope
+        - ip_not_allowed
+        - email_not_verified
+        - account_suspended
+        - forbidden
+        - validation_failed
+        - not_found
+        - request_refused
+        - insufficient_credit
+        - budget_cap_reached
+        - payment_required
+        - quota_reached
+        - service_suspended
+        - action_conflict
+        - idempotency_conflict
+        - hostname_taken
+        - order_in_progress
+        - too_many_pending_invoices
+        - coupon_not_found
+        - coupon_max_uses
+        - plan_unavailable_in_region
+        - image_unavailable_in_region
+        - image_incompatible_with_plan
+        - out_of_stock
+        - billing_mode_unavailable
+        - provisioning_failed
+        - rate_limited
+        - backend_unavailable
+        - internal_error
+
+    Region:
+      type: object
+      properties:
+        slug: { type: string, examples: [montreal] }
+        name: { type: string, examples: [Montreal] }
+        country: { type: string, examples: [CA] }
+        status: { type: string, enum: [available, limited, unavailable] }
+        ipv6:
+          type: boolean
+          description: IPv6 is available here; each machine also gets a routed /64.
+
+    Price:
+      type: object
+      properties:
+        currency: { type: string, examples: [CAD] }
+        hourly: { $ref: '#/components/schemas/Money' }
+        hourly_month_equivalent:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: What the hourly rate costs over 730 hours, powered on throughout.
+        monthly: { $ref: '#/components/schemas/Money' }
+        annual: { $ref: '#/components/schemas/Money' }
+        setup_fee: { $ref: '#/components/schemas/Money' }
+
+    Plan:
+      type: object
+      properties:
+        slug: { type: string, examples: [nano] }
+        name: { type: string }
+        description: { type: string }
+        vcpu: { type: integer }
+        memory_mb: { type: integer }
+        disk_gb: { type: integer }
+        traffic_tb: { type: [number, 'null'], description: Null means unmetered. }
+        port_mbps: { type: integer }
+        regions:
+          type: array
+          items: { type: string }
+        status: { type: string, enum: [available, out_of_stock, unavailable] }
+        prices:
+          type: array
+          items: { $ref: '#/components/schemas/Price' }
+
+    Image:
+      type: object
+      properties:
+        slug:
+          type: string
+          description: Stable across regions. This is what you pass at creation.
+          examples: [debian-13]
+        name: { type: string, examples: ['Debian 13 · Trixie'] }
+        family: { type: string, examples: [debian] }
+        category: { type: string, enum: [linux, windows, bsd, app, other] }
+        version: { type: [string, 'null'] }
+        status:
+          type: string
+          enum: [available, experimental, deprecated]
+          description: An experimental image is offered but still being run in.
+        regions:
+          type: array
+          items: { type: string }
+        min_disk_gb: { type: [integer, 'null'] }
+        min_memory_mb: { type: [integer, 'null'] }
+        default_user:
+          type: string
+          description: The account the image ships with; root is usually password-less and refused by sshd.
+        supports_ssh_keys:
+          type: boolean
+          description: |
+            Whether a key passed at creation actually lets you log in. False on
+            Windows images: the key reaches the machine, but nothing guarantees
+            an SSH server listens — use the password or the console there.
+
+    VmStatus:
+      type: string
+      description: |
+        `unknown` means the hypervisor did not answer when we asked: the
+        machine exists and is billed, we just cannot say whether it is powered
+        on right now.
+      enum:
+        - pending_payment
+        - provisioning
+        - running
+        - stopped
+        - installing
+        - suspended
+        - deleting
+        - deleted
+        - unknown
+        - error
+
+    VmBilling:
+      type: object
+      properties:
+        mode: { type: string, enum: [hourly, monthly] }
+        currency: { type: string }
+        hourly:
+          type: [object, 'null']
+          properties:
+            rate: { $ref: '#/components/schemas/Money' }
+            month_equivalent: { $ref: '#/components/schemas/Money' }
+            started_at: { type: string, format: date-time }
+            billed_through_at:
+              type: string
+              format: date-time
+              description: End of the last hour paid. Until then, the time being used is already settled.
+            hours_billed: { type: integer }
+            amount_billed: { $ref: '#/components/schemas/Money' }
+            state: { type: string, enum: [active, suspended, terminated] }
+        monthly:
+          type: [object, 'null']
+          properties:
+            price: { $ref: '#/components/schemas/Money' }
+            renews_at: { type: [string, 'null'], format: date-time }
+            invoice_id: { type: [integer, 'null'] }
+
+    Suspension:
+      type: object
+      properties:
+        suspended: { type: boolean }
+        reason:
+          type: [string, 'null']
+          enum: [credit, budget, bandwidth, unpaid, admin, null]
+        since: { type: [string, 'null'], format: date-time }
+        grace_ends_at:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            Credit exhausted only: the disk is kept until this date, free of
+            charge. Top up before it and the machine restarts; after it, the
+            machine and its disk are deleted.
+
+    Traffic:
+      type: object
+      properties:
+        used_gb: { type: number }
+        limit_gb: { type: [number, 'null'] }
+        percent: { type: [number, 'null'] }
+        overage_rate: { type: [string, 'null'] }
+        period_ends_at: { type: [string, 'null'], format: date-time }
+
+    Vm:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Stable for the life of the machine, reinstalls included.
+        hostname: { $ref: '#/components/schemas/Hostname' }
+        status: { $ref: '#/components/schemas/VmStatus' }
+        plan: { type: string }
+        region: { type: string }
+        image: { type: string }
+        created_at: { type: string, format: date-time }
+        specs:
+          type: object
+          properties:
+            vcpu: { type: integer }
+            memory_mb: { type: integer }
+            disk_gb: { type: integer }
+        ipv4: { type: [string, 'null'] }
+        ipv6: { type: [string, 'null'] }
+        ipv6_prefix: { type: [string, 'null'] }
+        dns_name: { type: [string, 'null'] }
+        billing: { $ref: '#/components/schemas/VmBilling' }
+        suspension: { $ref: '#/components/schemas/Suspension' }
+        traffic: { $ref: '#/components/schemas/Traffic' }
+        backups:
+          type: object
+          properties:
+            automatic:
+              type: boolean
+              description: Whether the nightly off-host backup option is on. The backup list has its own endpoint.
+          required: [automatic]
+
+    ActionType:
+      type: string
+      enum: [create, start, shutdown, reboot, stop, reinstall, rename, delete, restore_backup]
+
+    ActionStatus:
+      type: string
+      enum: [queued, running, completed, error]
+
+    Action:
+      type: object
+      properties:
+        id: { type: integer }
+        type: { $ref: '#/components/schemas/ActionType' }
+        status: { $ref: '#/components/schemas/ActionStatus' }
+        vm_id:
+          type: [integer, 'null']
+          description: The machine this action is about.
+        source:
+          type: string
+          enum: [api, console]
+          description: |
+            Where the action came from. Clicking in the console records one
+            too, so a machine's history is complete whichever way it was
+            driven.
+        error:
+          type: [object, 'null']
+          properties:
+            code: { $ref: '#/components/schemas/ErrorCode' }
+            message: { type: string }
+        created_at: { type: string, format: date-time }
+        started_at: { type: [string, 'null'], format: date-time }
+        finished_at: { type: [string, 'null'], format: date-time }
+
+    CreateVmRequest:
+      type: object
+      required: [plan, region, image, hostname, billing]
+      properties:
+        plan: { type: string, examples: [nano] }
+        region: { type: string, examples: [montreal] }
+        image: { type: string, examples: [debian-13] }
+        hostname: { $ref: '#/components/schemas/Hostname' }
+        billing: { type: string, enum: [hourly, monthly] }
+        payment:
+          type: string
+          enum: [credit, manual]
+          default: credit
+          description: |
+            Monthly only. `credit` settles the invoice from the balance when it
+            covers it and starts provisioning at once; `manual` always returns
+            the invoice to pay.
+        ssh_keys:
+          type: array
+          description: Fingerprints or ids of keys on the account. Ignored by images without cloud-init key support.
+          items: { type: string }
+        password_delivery:
+          type: string
+          enum: [email, none]
+          default: email
+          description: |
+            `email` generates a password and mails it. `none` requires at least
+            one SSH key and leaves the account without a password.
+        options:
+          type: object
+          additionalProperties: true
+          description: Paid options declared by the plan, by name. Unknown keys are refused.
+        dry_run:
+          type: boolean
+          default: false
+          description: Run every check and price the order without creating anything.
+
+    CreateVmResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            vm: { $ref: '#/components/schemas/Vm' }
+            action: { oneOf: [{ $ref: '#/components/schemas/Action' }, { type: 'null' }] }
+            invoice:
+              type: [object, 'null']
+              description: Monthly orders awaiting payment.
+              properties:
+                id: { type: integer }
+                total: { $ref: '#/components/schemas/Money' }
+                currency: { type: string }
+                due_at: { type: [string, 'null'], format: date-time }
+                url: { type: string, format: uri }
+
+    Check:
+      type: object
+      properties:
+        name:
+          type: string
+          examples: [quota, credit, image_fits_plan, account_standing, stock]
+        status: { type: string, enum: [pass, fail] }
+        code: { oneOf: [{ $ref: '#/components/schemas/ErrorCode' }, { type: 'null' }] }
+        message: { type: [string, 'null'] }
+
+    Estimate:
+      type: object
+      description: What the order would cost and whether it would go through.
+      properties:
+        would_succeed: { type: boolean }
+        plan: { type: string }
+        region: { type: string }
+        image: { type: string }
+        billing: { type: string, enum: [hourly, monthly] }
+        currency: { type: string }
+        hourly_rate: { oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] }
+        month_equivalent: { oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] }
+        monthly_price: { oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] }
+        required_credit:
+          allOf: [{ $ref: '#/components/schemas/Money' }]
+          description: Hourly, the first 24 hours. Monthly, the invoice total.
+        balance: { $ref: '#/components/schemas/Money' }
+        runway_hours_after:
+          type: [number, 'null']
+          description: Autonomy left once this machine is running, at the account's total burn rate.
+        checks:
+          type: array
+          items: { $ref: '#/components/schemas/Check' }
+
+    PowerActionRequest:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [start, shutdown, reboot, stop] }
+
+    ReinstallActionRequest:
+      type: object
+      required: [type, image]
+      description: |
+        Wipes the disk and redeploys. The image must be offered in the machine's
+        region and fit its plan. Credentials are mailed unless key-only access
+        is asked for.
+      properties:
+        type: { type: string, enum: [reinstall] }
+        image: { type: string }
+        ssh_keys:
+          type: array
+          items: { type: string }
+        password_delivery: { type: string, enum: [email, none], default: email }
+
+    Account:
+      type: object
+      properties:
+        currency: { type: string }
+        billing_mode:
+          type: string
+          enum: [prepaid, postpaid]
+          description: Read-only. Postpaid is arranged with support; usage is invoiced monthly instead of drawn from credit.
+        credit:
+          type: object
+          description: |
+            What the account can spend. `balance` is the sum of two pockets:
+            `paid` (credit bought) and `gifted` (credit granted by a credit
+            code). Gifted credit is spent first and may expire;
+            `gifted_expires_at` is the earliest expiry among what is left, or
+            null.
+          properties:
+            balance: { $ref: '#/components/schemas/Money' }
+            paid: { $ref: '#/components/schemas/Money' }
+            gifted: { $ref: '#/components/schemas/Money' }
+            gifted_expires_at:
+              type: [string, 'null']
+              format: date-time
+        hourly:
+          type: object
+          properties:
+            burn_rate:
+              allOf: [{ $ref: '#/components/schemas/Money' }]
+              description: Sum of the hourly rates of the machines currently running.
+            runway_hours:
+              type: [number, 'null']
+              description: Balance divided by burn rate. Null when nothing is running.
+            active_machines: { type: integer }
+        budget:
+          type: object
+          properties:
+            monthly: { oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] }
+            month_to_date: { $ref: '#/components/schemas/Money' }
+            percent: { type: [number, 'null'] }
+            cap_percent:
+              type: integer
+              description: Past this share of the budget, machines are stopped. Warnings come at 50, 80 and 100.
+        quota:
+          type: object
+          properties:
+            limit: { type: integer }
+            used: { type: integer }
+            remaining: { type: integer }
+        auto_topup:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            threshold: { oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] }
+            amount: { oneOf: [{ $ref: '#/components/schemas/Money' }, { type: 'null' }] }
+
+    UsageRecord:
+      type: object
+      properties:
+        vm_id: { type: [integer, 'null'] }
+        hostname: { type: [string, 'null'] }
+        period_start: { type: string, format: date-time }
+        hours: { type: integer, description: Always 1 with `group_by=hour`. }
+        rate: { $ref: '#/components/schemas/Money' }
+        amount: { $ref: '#/components/schemas/Money' }
+        currency: { type: string }
+
+    SshKey:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        fingerprint: { type: string, examples: ['SHA256:0mR1vP…'] }
+        public_key: { type: string }
+        created_at: { type: string, format: date-time }
+
+    Metrics:
+      type: object
+      properties:
+        timeframe: { type: string }
+        step_seconds: { type: integer }
+        series:
+          type: array
+          items:
+            type: object
+            properties:
+              time: { type: string, format: date-time }
+              cpu: { type: [number, 'null'], description: Share of the allotted vCPU, 0 to 1. }
+              memory_bytes: { type: [number, 'null'] }
+              disk_read_bytes: { type: [number, 'null'] }
+              disk_write_bytes: { type: [number, 'null'] }
+              net_in_bytes: { type: [number, 'null'] }
+              net_out_bytes: { type: [number, 'null'] }
+
+    ConsoleSession:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+          description: WebSocket endpoint of the console relay. Proxmox itself is never reachable from the internet.
+          examples: ['https://console.ffxf.net/vncws/4f1c…']
+        password:
+          type: string
+          description: |
+            The VNC password for this session, presented once the socket is
+            up. It is deliberately not in the URL, which travels through proxy
+            logs.
+        expires_at:
+          type: string
+          format: date-time
+          description: Thirty seconds out. The handle burns on first use; ask for another one to reconnect.
+        single_use: { type: boolean }
+
+    IpAddress:
+      type: object
+      properties:
+        address: { type: string }
+        version: { type: integer, enum: [4, 6] }
+        primary: { type: boolean }
+        gateway: { type: [string, 'null'] }
+        prefix_length: { type: [integer, 'null'] }
+        rdns: { type: [string, 'null'] }
+
+    Network:
+      type: object
+      properties:
+        ipv4:
+          type: array
+          items: { $ref: '#/components/schemas/IpAddress' }
+        ipv6:
+          type: array
+          items: { $ref: '#/components/schemas/IpAddress' }
+        ipv6_prefix: { type: [string, 'null'], examples: ['2607:5300:abcd:ef00::/64'] }
+        port_mbps: { type: integer }
+
+    Backup:
+      type: object
+      properties:
+        id: { type: string, description: Opaque volume identifier. }
+        type: { type: string, enum: [automatic, manual] }
+        created_at: { type: string, format: date-time }
+        size_bytes: { type: [integer, 'null'] }
+        restorable: { type: boolean }
