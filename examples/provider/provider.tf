@@ -6,6 +6,13 @@ terraform {
   }
 }
 
+variable "ffxf_token" {
+  type      = string
+  sensitive = true
+}
+
 provider "ffxf" {
-  # The token can also be set by env variable using FFXF_TOKEN
+  token = var.ffxf_token
+  # Alternatively, set FFXF_TOKEN in the environment and omit token here.
+  # endpoint = "https://api.ffxf.net/v1"
 }

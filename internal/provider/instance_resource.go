@@ -40,32 +40,39 @@ func (r *InstanceResource) Metadata(ctx context.Context, req resource.MetadataRe
 
 func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manages an FFXF Cloud virtual machine.",
+		Description: "Creates and manages an FFXF Cloud virtual machine. Choose a plan, region, and image that are available together in your account. Changing the plan, region, image, or billing mode replaces the machine; changing the hostname updates it in place.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.Int64Attribute{
-				Computed: true,
+				Computed:    true,
+				Description: "Numeric ID assigned to the virtual machine by FFXF Cloud.",
 			},
 			"hostname": schema.StringAttribute{
-				Required: true,
+				Required:    true,
+				Description: "Machine hostname. Hostname changes are applied in place.",
 			},
 			"plan": schema.StringAttribute{
 				Required:      true,
+				Description:   "Plan slug to provision. Select a plan available in the chosen region and compatible with the image.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"region": schema.StringAttribute{
 				Required:      true,
+				Description:   "Region slug where the machine will run. The plan and image must both be available in this region.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"image": schema.StringAttribute{
 				Required:      true,
+				Description:   "Image slug for the operating system or application image to install. It must be compatible with the selected plan and region.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"billing": schema.StringAttribute{
 				Optional:      true,
+				Description:   "Billing mode: hourly or monthly. Defaults to hourly. Changing this value replaces the machine.",
 				PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"ipv4": schema.StringAttribute{
-				Computed: true,
+				Computed:    true,
+				Description: "Public IPv4 address assigned to the machine, when available.",
 			},
 		},
 	}
