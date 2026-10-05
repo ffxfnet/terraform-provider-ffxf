@@ -3,12 +3,12 @@
 page_title: "ffxf_instance Resource - ffxf"
 subcategory: ""
 description: |-
-  Manages an FFXF Cloud virtual machine.
+  Creates and manages an FFXF Cloud virtual machine. Choose a plan, region, and image that are available together in your account. Changing the plan, region, image, or billing mode replaces the machine; changing the hostname updates it in place.
 ---
 
 # ffxf_instance (Resource)
 
-Manages an FFXF Cloud virtual machine.
+Creates and manages an FFXF Cloud virtual machine. Choose a plan, region, and image that are available together in your account. Changing the plan, region, image, or billing mode replaces the machine; changing the hostname updates it in place.
 
 ## Example Usage
 
@@ -27,16 +27,16 @@ resource "ffxf_instance" "example" {
 
 ### Required
 
-- `hostname` (String)
-- `image` (String)
-- `plan` (String)
-- `region` (String)
+- `hostname` (String) Machine hostname. Hostname changes are applied in place.
+- `image` (String) Image slug for the operating system or application image to install. It must be compatible with the selected plan and region.
+- `plan` (String) Plan slug to provision. Select a plan available in the chosen region and compatible with the image.
+- `region` (String) Region slug where the machine will run. The plan and image must both be available in this region.
 
 ### Optional
 
-- `billing` (String)
+- `billing` (String) Billing mode: hourly or monthly. Defaults to hourly. Changing this value replaces the machine.
 
 ### Read-Only
 
-- `id` (Number) The ID of this resource.
-- `ipv4` (String)
+- `id` (Number) Numeric ID assigned to the virtual machine by FFXF Cloud.
+- `ipv4` (String) Public IPv4 address assigned to the machine, when available.

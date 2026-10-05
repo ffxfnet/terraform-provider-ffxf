@@ -39,15 +39,16 @@ func (p *FFXFProvider) Metadata(ctx context.Context, req provider.MetadataReques
 
 func (p *FFXFProvider) Schema(ctx context.Context, req provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
+		Description: "Configure access to the FFXF Cloud API. Supply an API token directly or through the FFXF_TOKEN environment variable.",
 		Attributes: map[string]schema.Attribute{
 			"endpoint": schema.StringAttribute{
 				Optional:    true,
-				Description: "FFXF Cloud API URL",
+				Description: "FFXF Cloud API base URL. Defaults to https://api.ffxf.net/v1. Can also be set with FFXF_ENDPOINT.",
 			},
 			"token": schema.StringAttribute{
 				Optional:    true,
 				Sensitive:   true,
-				Description: "Token API",
+				Description: "FFXF Cloud API token. If omitted, the provider reads FFXF_TOKEN from the environment.",
 			},
 		},
 	}
