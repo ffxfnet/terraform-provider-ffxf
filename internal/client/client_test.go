@@ -204,3 +204,54 @@ func TestWaitForActionReturnsContextError(t *testing.T) {
 		t.Fatalf("WaitForAction() error = %v, want %v", err, context.Canceled)
 	}
 }
+
+func TestCatalogLookupsDecodeResponses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Errorf("Authorization = %q, want %q", got, "Bearer test-token")
+		}
+
+		switch r.URL.Path {
+		case "/regions":
+			_, _ = w.Write([]byte(`{"data":[{"slug":"montreal","name":"Montreal","country":"CA","status":"available","ipv4":true,"ipv6":true}]}`))
+		case "/plans/nano":
+			_, _ = w.Write([]byte(`{"data":{"slug":"nano","name":"Nano","description":"Small plan","vcpu":1,"memory_mb":2048,"disk_gb":20,"traffic_tb":1,"port_mbps":1000,"regions":["montreal"],"status":"available","prices":[{"currency":"CAD","hourly":"0.018","hourly_month_equivalent":"13.14","hourly_stopped":null,"monthly":"8.50","annual":"85.00","setup_fee":"0.00"}]}}`))
+		case "/images/debian-13":
+			_, _ = w.Write([]byte(`{"data":{"slug":"debian-13","name":"Debian 13","family":"debian","category":"linux","version":"13","status":"available","regions":["montreal"],"min_disk_gb":null,"min_memory_mb":null,"default_user":"debian","supports_ssh_keys":true}}`))
+		default:
+			t.Errorf("unexpected request path %q", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	apiClient := NewClient(server.URL, "test-token")
+	apiClient.HTTPClient = server.Client()
+
+	regions, err := apiClient.ListRegions(context.Background())
+	if err != nil {
+		t.Fatalf("ListRegions() error = %v", err)
+	}
+	if len(regions.Data) != 1 || regions.Data[0].Slug != "montreal" || !regions.Data[0].IPv6 {
+		t.Errorf("ListRegions() data = %#v, want Montreal with IPv6", regions.Data)
+	}
+
+	plan, err := apiClient.GetPlan(context.Background(), "nano")
+	if err != nil {
+		t.Fatalf("GetPlan() error = %v", err)
+	}
+	if plan.Data.Slug != "nano" || plan.Data.VCPU != 1 || plan.Data.TrafficTB == nil || *plan.Data.TrafficTB != 1 {
+		t.Errorf("GetPlan() data = %#v, want decoded nano plan", plan.Data)
+	}
+	if len(plan.Data.Prices) != 1 || plan.Data.Prices[0].Currency != "CAD" || plan.Data.Prices[0].Hourly != "0.018" || plan.Data.Prices[0].HourlyStopped != nil {
+		t.Errorf("GetPlan() prices = %#v, want CAD rates with no stopped rate", plan.Data.Prices)
+	}
+
+	image, err := apiClient.GetImage(context.Background(), "debian-13")
+	if err != nil {
+		t.Fatalf("GetImage() error = %v", err)
+	}
+	if image.Data.Slug != "debian-13" || image.Data.Version == nil || *image.Data.Version != "13" || !image.Data.SupportsSSHKeys {
+		t.Errorf("GetImage() data = %#v, want decoded Debian 13 image", image.Data)
+	}
+}

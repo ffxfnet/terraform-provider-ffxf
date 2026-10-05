@@ -92,5 +92,9 @@ func (p *FFXFProvider) Resources(ctx context.Context) []func() resource.Resource
 }
 
 func (p *FFXFProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{}
+	return []func() datasource.DataSource{
+		NewRegionDataSource,
+		NewPlanDataSource,
+		NewImageDataSource,
+	}
 }
