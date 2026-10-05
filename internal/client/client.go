@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -70,6 +71,65 @@ type VMResponse struct {
 	Data VM `json:"data"`
 }
 
+type Region struct {
+	Slug    string `json:"slug"`
+	Name    string `json:"name"`
+	Country string `json:"country"`
+	Status  string `json:"status"`
+	IPv4    bool   `json:"ipv4"`
+	IPv6    bool   `json:"ipv6"`
+}
+
+type RegionsResponse struct {
+	Data []Region `json:"data"`
+}
+
+type Plan struct {
+	Slug        string   `json:"slug"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	VCPU        int      `json:"vcpu"`
+	MemoryMB    int      `json:"memory_mb"`
+	DiskGB      int      `json:"disk_gb"`
+	TrafficTB   *float64 `json:"traffic_tb"`
+	PortMbps    int      `json:"port_mbps"`
+	Regions     []string `json:"regions"`
+	Status      string   `json:"status"`
+	Prices      []Price  `json:"prices"`
+}
+
+type Price struct {
+	Currency              string  `json:"currency"`
+	Hourly                string  `json:"hourly"`
+	HourlyMonthEquivalent string  `json:"hourly_month_equivalent"`
+	HourlyStopped         *string `json:"hourly_stopped"`
+	Monthly               string  `json:"monthly"`
+	Annual                string  `json:"annual"`
+	SetupFee              string  `json:"setup_fee"`
+}
+
+type PlanResponse struct {
+	Data Plan `json:"data"`
+}
+
+type Image struct {
+	Slug            string   `json:"slug"`
+	Name            string   `json:"name"`
+	Family          string   `json:"family"`
+	Category        string   `json:"category"`
+	Version         *string  `json:"version"`
+	Status          string   `json:"status"`
+	Regions         []string `json:"regions"`
+	MinDiskGB       *int     `json:"min_disk_gb"`
+	MinMemoryMB     *int     `json:"min_memory_mb"`
+	DefaultUser     string   `json:"default_user"`
+	SupportsSSHKeys bool     `json:"supports_ssh_keys"`
+}
+
+type ImageResponse struct {
+	Data Image `json:"data"`
+}
+
 type UpdateVmRequest struct {
 	Hostname string `json:"hostname"`
 }
@@ -82,6 +142,52 @@ type ActionResponse struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	} `json:"data"`
+}
+
+func (c *Client) ListRegions(ctx context.Context) (*RegionsResponse, error) {
+	var result RegionsResponse
+	if err := c.get(ctx, "/regions", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) GetPlan(ctx context.Context, slug string) (*PlanResponse, error) {
+	var result PlanResponse
+	if err := c.get(ctx, "/plans/"+url.PathEscape(slug), &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) GetImage(ctx context.Context, slug string) (*ImageResponse, error) {
+	var result ImageResponse
+	if err := c.get(ctx, "/images/"+url.PathEscape(slug), &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) get(ctx context.Context, path string, target any) error {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+
+	res, err := c.HTTPClient.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("API HTTP error %d during GET %s", res.StatusCode, path)
+	}
+	if err := json.NewDecoder(res.Body).Decode(target); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *Client) CreateVM(ctx context.Context, req CreateVmRequest, idempotencyKey string) (*CreateVmResponse, error) {
