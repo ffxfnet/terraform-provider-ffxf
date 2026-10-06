@@ -205,6 +205,42 @@ func TestWaitForActionReturnsContextError(t *testing.T) {
 	}
 }
 
+func TestWaitForActionReturnsOnCompletion(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/actions/7" {
+			t.Errorf("request = %s %s, want GET /actions/7", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Errorf("Authorization = %q, want %q", got, "Bearer test-token")
+		}
+		_, _ = w.Write([]byte(`{"data":{"id":7,"status":"completed"}}`))
+	}))
+	defer server.Close()
+
+	apiClient := NewClient(server.URL, "test-token")
+	apiClient.HTTPClient = server.Client()
+	if err := apiClient.WaitForAction(context.Background(), 7); err != nil {
+		t.Fatalf("WaitForAction() error = %v, want nil", err)
+	}
+}
+
+func TestWaitForActionReturnsActionFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/actions/8" {
+			t.Errorf("request = %s %s, want GET /actions/8", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":{"id":8,"status":"error","error":{"message":"provisioning failed"}}}`))
+	}))
+	defer server.Close()
+
+	apiClient := NewClient(server.URL, "test-token")
+	apiClient.HTTPClient = server.Client()
+	err := apiClient.WaitForAction(context.Background(), 8)
+	if err == nil || !strings.Contains(err.Error(), "provisioning failed") {
+		t.Fatalf("WaitForAction() error = %v, want provisioning failure", err)
+	}
+}
+
 func TestCatalogLookupsDecodeResponses(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
@@ -253,5 +289,59 @@ func TestCatalogLookupsDecodeResponses(t *testing.T) {
 	}
 	if image.Data.Slug != "debian-13" || image.Data.Version == nil || *image.Data.Version != "13" || !image.Data.SupportsSSHKeys {
 		t.Errorf("GetImage() data = %#v, want decoded Debian 13 image", image.Data)
+	}
+}
+
+func TestCatalogLookupsRejectHTTPAndMalformedJSON(t *testing.T) {
+	lookups := []struct {
+		name string
+		call func(context.Context, *Client) error
+	}{
+		{
+			name: "regions",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.ListRegions(ctx)
+				return err
+			},
+		},
+		{
+			name: "plan",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.GetPlan(ctx, "nano")
+				return err
+			},
+		},
+		{
+			name: "image",
+			call: func(ctx context.Context, client *Client) error {
+				_, err := client.GetImage(ctx, "debian-13")
+				return err
+			},
+		},
+	}
+
+	for _, lookup := range lookups {
+		for _, response := range []struct {
+			name       string
+			statusCode int
+			body       string
+		}{
+			{name: "non-200 status", statusCode: http.StatusServiceUnavailable},
+			{name: "malformed JSON", statusCode: http.StatusOK, body: "{"},
+		} {
+			t.Run(lookup.name+"/"+response.name, func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(response.statusCode)
+					_, _ = w.Write([]byte(response.body))
+				}))
+				defer server.Close()
+
+				apiClient := NewClient(server.URL, "test-token")
+				apiClient.HTTPClient = server.Client()
+				if err := lookup.call(context.Background(), apiClient); err == nil {
+					t.Fatal("catalog lookup should reject the API response")
+				}
+			})
+		}
 	}
 }
