@@ -40,7 +40,7 @@ func (r *InstanceResource) Metadata(ctx context.Context, req resource.MetadataRe
 
 func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Creates and manages an FFXF Cloud virtual machine. Choose a plan, region, and image that are available together in your account. Changing the plan, region, image, or billing mode replaces the machine; changing the hostname updates it in place.",
+		Description: "Creates and manages an FFXF Cloud virtual machine. Choose a plan, region, and image that are available together in your account. When the machine quota is reached, the API error includes details.increase_url for the console quota request flow. Changing the plan, region, image, or billing mode replaces the machine; changing the hostname updates it in place.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.Int64Attribute{
 				Computed:    true,

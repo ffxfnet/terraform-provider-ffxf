@@ -249,7 +249,7 @@ func (d *ImageDataSource) Schema(ctx context.Context, req datasource.SchemaReque
 			"version":           schema.StringAttribute{Computed: true, Description: "Image version, when applicable."},
 			"status":            schema.StringAttribute{Computed: true, Description: "Availability status of the image."},
 			"regions":           schema.ListAttribute{Computed: true, ElementType: types.StringType, Description: "Region slugs where the image is offered."},
-			"min_disk_gb":       schema.Int64Attribute{Computed: true, Description: "Minimum compatible disk size in GiB, when specified."},
+			"min_disk_gb":       schema.Int64Attribute{Computed: true, Description: "Minimum compatible disk size in GiB. Proxmox does not shrink a clone below the image size."},
 			"min_memory_mb":     schema.Int64Attribute{Computed: true, Description: "Minimum compatible memory in MiB, when specified."},
 			"default_user":      schema.StringAttribute{Computed: true, Description: "Default account name on the image."},
 			"supports_ssh_keys": schema.BoolAttribute{Computed: true, Description: "Whether SSH key provisioning is supported."},

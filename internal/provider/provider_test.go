@@ -137,16 +137,20 @@ func TestProviderConfigureRequiresToken(t *testing.T) {
 func TestProviderRegistersResourcesAndDataSources(t *testing.T) {
 	provider := &FFXFProvider{}
 	resources := provider.Resources(context.Background())
-	if len(resources) != 2 {
-		t.Fatalf("Resources() returned %d entries, want 2", len(resources))
+	if len(resources) != 7 {
+		t.Fatalf("Resources() returned %d entries, want 7", len(resources))
 	}
-	wantResourceNames := map[string]bool{"ffxf_instance": false, "ffxf_vpc": false}
+	wantResourceNames := map[string]bool{
+		"ffxf_instance": false, "ffxf_vpc": false, "ffxf_firewall": false,
+		"ffxf_firewall_member": false, "ffxf_load_balancer": false,
+		"ffxf_load_balancer_pool": false, "ffxf_load_balancer_listener": false,
+	}
 	for _, newResource := range resources {
 		registeredResource := newResource()
 		var metadata resource.MetadataResponse
 		registeredResource.Metadata(context.Background(), resource.MetadataRequest{ProviderTypeName: "ffxf"}, &metadata)
 		if _, ok := wantResourceNames[metadata.TypeName]; !ok {
-			t.Errorf("resource type name = %q, want one of ffxf_instance, ffxf_vpc", metadata.TypeName)
+			t.Errorf("resource type name = %q, want a registered FFXF resource", metadata.TypeName)
 		}
 		wantResourceNames[metadata.TypeName] = true
 	}
@@ -157,16 +161,19 @@ func TestProviderRegistersResourcesAndDataSources(t *testing.T) {
 	}
 
 	dataSources := provider.DataSources(context.Background())
-	if len(dataSources) != 3 {
-		t.Fatalf("DataSources() returned %d entries, want 3", len(dataSources))
+	if len(dataSources) != 6 {
+		t.Fatalf("DataSources() returned %d entries, want 6", len(dataSources))
 	}
-	wantNames := map[string]bool{"ffxf_region": false, "ffxf_plan": false, "ffxf_image": false}
+	wantNames := map[string]bool{
+		"ffxf_region": false, "ffxf_plan": false, "ffxf_image": false,
+		"ffxf_firewalls": false, "ffxf_load_balancers": false, "ffxf_load_balancer_metrics": false,
+	}
 	for _, newDataSource := range dataSources {
 		dataSource := newDataSource()
 		var metadata datasource.MetadataResponse
 		dataSource.Metadata(context.Background(), datasource.MetadataRequest{ProviderTypeName: "ffxf"}, &metadata)
 		if _, ok := wantNames[metadata.TypeName]; !ok {
-			t.Errorf("data source type name = %q, want one of ffxf_region, ffxf_plan, ffxf_image", metadata.TypeName)
+			t.Errorf("data source type name = %q, want a registered FFXF data source", metadata.TypeName)
 		}
 		wantNames[metadata.TypeName] = true
 
