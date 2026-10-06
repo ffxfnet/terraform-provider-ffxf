@@ -195,6 +195,114 @@ func TestDeleteVMRejectsUnexpectedStatus(t *testing.T) {
 	}
 }
 
+func TestCreateVPCSendsRequestAndDecodesResponse(t *testing.T) {
+	wantRequest := CreateVPCRequest{Name: "production", CIDR: "10.0.0.0/24", Region: "montreal"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/vpcs" {
+			t.Errorf("request = %s %s, want POST /vpcs", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Errorf("Authorization = %q, want Bearer test-token", got)
+		}
+		if got := r.Header.Get("Content-Type"); got != "application/json" {
+			t.Errorf("Content-Type = %q, want application/json", got)
+		}
+		var gotRequest CreateVPCRequest
+		if err := json.NewDecoder(r.Body).Decode(&gotRequest); err != nil {
+			t.Errorf("decode request body: %v", err)
+		} else if gotRequest != wantRequest {
+			t.Errorf("request body = %#v, want %#v", gotRequest, wantRequest)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"data":{"id":17,"name":"production","cidr":"10.0.0.0/24","region":"montreal","status":"active","gateway":"10.0.0.1","internet_gateway":true,"created_at":"2026-10-05T12:00:00Z"}}`))
+	}))
+	defer server.Close()
+
+	apiClient := NewClient(server.URL, "test-token")
+	apiClient.HTTPClient = server.Client()
+	response, err := apiClient.CreateVPC(context.Background(), wantRequest)
+	if err != nil {
+		t.Fatalf("CreateVPC() error = %v", err)
+	}
+	if response.Data.ID != 17 || response.Data.Gateway != "10.0.0.1" || !response.Data.InternetGateway {
+		t.Errorf("CreateVPC() response = %#v, want populated network", response.Data)
+	}
+}
+
+func TestCreateVPCRejectsUnexpectedStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+	apiClient := NewClient(server.URL, "test-token")
+	apiClient.HTTPClient = server.Client()
+	_, err := apiClient.CreateVPC(context.Background(), CreateVPCRequest{})
+	if err == nil || !strings.Contains(err.Error(), "API HTTP error 400 during VPC creation") {
+		t.Fatalf("CreateVPC() error = %v, want HTTP 400 error", err)
+	}
+}
+
+func TestGetVPCDecodesResponseAndNotFound(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		statusCode int
+		body       string
+		wantErr    error
+	}{
+		{
+			name:       "found",
+			statusCode: http.StatusOK,
+			body:       `{"data":{"id":17,"name":"production","cidr":"10.0.0.0/24","region":"montreal","status":"active","gateway":"10.0.0.1","internet_gateway":true,"created_at":"2026-10-05T12:00:00Z"}}`,
+		},
+		{name: "missing", statusCode: http.StatusNotFound, wantErr: ErrVPCNotFound},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/vpcs/17" {
+					t.Errorf("request = %s %s, want GET /vpcs/17", r.Method, r.URL.Path)
+				}
+				if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+					t.Errorf("Authorization = %q, want Bearer test-token", got)
+				}
+				w.WriteHeader(test.statusCode)
+				_, _ = w.Write([]byte(test.body))
+			}))
+			defer server.Close()
+			apiClient := NewClient(server.URL, "test-token")
+			apiClient.HTTPClient = server.Client()
+			response, err := apiClient.GetVPC(context.Background(), 17)
+			if !errors.Is(err, test.wantErr) {
+				t.Fatalf("GetVPC() error = %v, want %v", err, test.wantErr)
+			}
+			if test.wantErr == nil && (response.Data.ID != 17 || response.Data.CIDR != "10.0.0.0/24") {
+				t.Errorf("GetVPC() response = %#v, want decoded VPC", response.Data)
+			}
+		})
+	}
+}
+
+func TestDeleteVPCHandlesDeletedAndMissing(t *testing.T) {
+	for _, statusCode := range []int{http.StatusNoContent, http.StatusNotFound} {
+		t.Run(http.StatusText(statusCode), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodDelete || r.URL.Path != "/vpcs/17" {
+					t.Errorf("request = %s %s, want DELETE /vpcs/17", r.Method, r.URL.Path)
+				}
+				if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+					t.Errorf("Authorization = %q, want Bearer test-token", got)
+				}
+				w.WriteHeader(statusCode)
+			}))
+			defer server.Close()
+			apiClient := NewClient(server.URL, "test-token")
+			apiClient.HTTPClient = server.Client()
+			if err := apiClient.DeleteVPC(context.Background(), 17); err != nil {
+				t.Fatalf("DeleteVPC() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
 func TestWaitForActionReturnsContextError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

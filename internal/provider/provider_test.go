@@ -51,6 +51,17 @@ func TestInstanceResourceMetadata(t *testing.T) {
 	}
 }
 
+func TestVPCResourceMetadata(t *testing.T) {
+	vpc := NewVPCResource()
+	var response resource.MetadataResponse
+
+	vpc.Metadata(context.Background(), resource.MetadataRequest{ProviderTypeName: "ffxf"}, &response)
+
+	if response.TypeName != "ffxf_vpc" {
+		t.Errorf("Metadata() TypeName = %q, want %q", response.TypeName, "ffxf_vpc")
+	}
+}
+
 func TestProviderConfigureUsesEnvironmentAndExplicitValues(t *testing.T) {
 	t.Setenv("FFXF_TOKEN", "environment-token")
 	t.Setenv("FFXF_ENDPOINT", "https://environment.example/v1")
@@ -125,8 +136,24 @@ func TestProviderConfigureRequiresToken(t *testing.T) {
 
 func TestProviderRegistersResourcesAndDataSources(t *testing.T) {
 	provider := &FFXFProvider{}
-	if resources := provider.Resources(context.Background()); len(resources) != 1 {
-		t.Fatalf("Resources() returned %d entries, want 1", len(resources))
+	resources := provider.Resources(context.Background())
+	if len(resources) != 2 {
+		t.Fatalf("Resources() returned %d entries, want 2", len(resources))
+	}
+	wantResourceNames := map[string]bool{"ffxf_instance": false, "ffxf_vpc": false}
+	for _, newResource := range resources {
+		registeredResource := newResource()
+		var metadata resource.MetadataResponse
+		registeredResource.Metadata(context.Background(), resource.MetadataRequest{ProviderTypeName: "ffxf"}, &metadata)
+		if _, ok := wantResourceNames[metadata.TypeName]; !ok {
+			t.Errorf("resource type name = %q, want one of ffxf_instance, ffxf_vpc", metadata.TypeName)
+		}
+		wantResourceNames[metadata.TypeName] = true
+	}
+	for name, found := range wantResourceNames {
+		if !found {
+			t.Errorf("Resources() is missing %q", name)
+		}
 	}
 
 	dataSources := provider.DataSources(context.Background())

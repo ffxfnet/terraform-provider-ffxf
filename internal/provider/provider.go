@@ -88,6 +88,7 @@ func (p *FFXFProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 func (p *FFXFProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewInstanceResource,
+		NewVPCResource,
 	}
 }
 

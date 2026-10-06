@@ -12,6 +12,7 @@ import (
 )
 
 var ErrVMNotFound = errors.New("VM not found")
+var ErrVPCNotFound = errors.New("VPC not found")
 
 type Client struct {
 	BaseURL    string
@@ -69,6 +70,27 @@ type VM struct {
 
 type VMResponse struct {
 	Data VM `json:"data"`
+}
+
+type CreateVPCRequest struct {
+	Name   string `json:"name"`
+	CIDR   string `json:"cidr"`
+	Region string `json:"region"`
+}
+
+type VPC struct {
+	ID              int    `json:"id"`
+	Name            string `json:"name"`
+	CIDR            string `json:"cidr"`
+	Region          string `json:"region"`
+	Status          string `json:"status"`
+	Gateway         string `json:"gateway"`
+	InternetGateway bool   `json:"internet_gateway"`
+	CreatedAt       string `json:"created_at"`
+}
+
+type VPCResponse struct {
+	Data VPC `json:"data"`
 }
 
 type Region struct {
@@ -166,6 +188,79 @@ func (c *Client) GetImage(ctx context.Context, slug string) (*ImageResponse, err
 		return nil, err
 	}
 	return &result, nil
+}
+
+func (c *Client) CreateVPC(ctx context.Context, req CreateVPCRequest) (*VPCResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/vpcs", bytes.NewBuffer(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	res, err := c.HTTPClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("API HTTP error %d during VPC creation", res.StatusCode)
+	}
+
+	var result VPCResponse
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) GetVPC(ctx context.Context, vpcID int64) (*VPCResponse, error) {
+	path := fmt.Sprintf("%s/vpcs/%d", c.BaseURL, vpcID)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+
+	res, err := c.HTTPClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusNotFound {
+		return nil, ErrVPCNotFound
+	}
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API HTTP error %d during VPC read", res.StatusCode)
+	}
+
+	var result VPCResponse
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (c *Client) DeleteVPC(ctx context.Context, vpcID int64) error {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, fmt.Sprintf("%s/vpcs/%d", c.BaseURL, vpcID), nil)
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+
+	res, err := c.HTTPClient.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusNoContent && res.StatusCode != http.StatusNotFound {
+		return fmt.Errorf("API HTTP error %d during VPC deletion", res.StatusCode)
+	}
+	return nil
 }
 
 func (c *Client) get(ctx context.Context, path string, target any) error {

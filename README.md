@@ -2,7 +2,7 @@
 
 Manage FFXF Cloud virtual machines with OpenTofu. Define instance configuration in HCL and let OpenTofu create, update, refresh, and destroy the resources to match your configuration.
 
-The provider supports the `ffxf_instance` resource and read-only catalog data sources for regions, plans, and images. Use the data sources to inspect the offerings available to your account before creating an instance. The instance resource tracks its assigned ID and IPv4 address, and updates hostname changes in place. Changes to plan, region, image, or billing require the instance to be replaced.
+The provider supports the `ffxf_instance` and `ffxf_vpc` resources, plus read-only catalog data sources for regions, plans, and images. Use the data sources to inspect the offerings available to your account before creating an instance. The instance resource tracks its assigned ID and IPv4 address, and updates hostname changes in place. Changes to plan, region, image, or billing require the instance to be replaced. VPCs are created with a name, private IPv4 range, and region; changes to these settings replace the network.
 
 ## Configuration
 
