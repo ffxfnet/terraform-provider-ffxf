@@ -26,8 +26,19 @@ jobs:
       - name: Run Go vet
         run: go vet ./...
 
-      - name: Run Go tests
-        run: go test ./...
+      - name: Run Go tests and check coverage
+        run: |
+          coverage_file="$(mktemp)"
+          trap 'rm -f "$coverage_file"' EXIT
+          go test ./... -coverprofile="$coverage_file"
+          coverage_report="$(go tool cover -func="$coverage_file")"
+          printf '%s\n' "$coverage_report"
+          total_coverage="$(printf '%s\n' "$coverage_report" | awk '$1 == "total:" { gsub(/%/, "", $3); print $3 }')"
+          echo "Total statement coverage: ${total_coverage}% (minimum 80%)"
+          awk -v coverage="$total_coverage" 'BEGIN { if (coverage < 80) exit 1 }' || {
+            echo "Coverage is below the required 80%."
+            exit 1
+          }
 
       - name: Check OpenTofu example formatting
         run: tofu fmt -check -recursive examples
