@@ -89,6 +89,11 @@ func (p *FFXFProvider) Resources(ctx context.Context) []func() resource.Resource
 	return []func() resource.Resource{
 		NewInstanceResource,
 		NewVPCResource,
+		NewFirewallResource,
+		NewFirewallMemberResource,
+		NewLoadBalancerResource,
+		NewLoadBalancerPoolResource,
+		NewLoadBalancerListenerResource,
 	}
 }
 
@@ -97,5 +102,8 @@ func (p *FFXFProvider) DataSources(ctx context.Context) []func() datasource.Data
 		NewRegionDataSource,
 		NewPlanDataSource,
 		NewImageDataSource,
+		NewFirewallsDataSource,
+		NewLoadBalancersDataSource,
+		NewLoadBalancerMetricsDataSource,
 	}
 }

@@ -453,3 +453,107 @@ func TestCatalogLookupsRejectHTTPAndMalformedJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestCreateFirewallSendsRulesAndDecodesResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/firewalls" {
+			t.Errorf("request = %s %s, want POST /firewalls", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Errorf("Authorization = %q, want Bearer test-token", got)
+		}
+		var body struct {
+			Name  string         `json:"name"`
+			Rules []FirewallRule `json:"rules"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+		} else if body.Name != "web" || len(body.Rules) != 1 || body.Rules[0].Protocol != "tcp" || body.Rules[0].Direction != "in" {
+			t.Errorf("request body = %#v, want web firewall with inbound TCP rule", body)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"data":{"id":3,"name":"web","rules":[{"direction":"in","protocol":"tcp","ports":"443","sources":[]}],"members":[],"created_at":"2026-10-06T12:00:00Z"}}`))
+	}))
+	defer server.Close()
+
+	apiClient := NewClient(server.URL, "test-token")
+	apiClient.HTTPClient = server.Client()
+	response, err := apiClient.CreateFirewall(context.Background(), "web", []FirewallRule{{Direction: "in", Protocol: "tcp"}})
+	if err != nil {
+		t.Fatalf("CreateFirewall() error = %v", err)
+	}
+	if response.Data.ID != 3 || response.Data.Rules[0].Ports == nil || *response.Data.Rules[0].Ports != "443" {
+		t.Errorf("CreateFirewall() response = %#v, want firewall 3 with port 443", response.Data)
+	}
+}
+
+func TestCreateFirewallOmitsUnconfiguredRules(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		if _, exists := body["rules"]; exists {
+			t.Errorf("request body includes rules: %s, want API defaults", body["rules"])
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"data":{"id":4,"name":"default","rules":[],"members":[],"created_at":"2026-10-06T12:00:00Z"}}`))
+	}))
+	defer server.Close()
+
+	apiClient := NewClient(server.URL, "test-token")
+	apiClient.HTTPClient = server.Client()
+	if _, err := apiClient.CreateFirewall(context.Background(), "default", nil); err != nil {
+		t.Fatalf("CreateFirewall() error = %v", err)
+	}
+}
+
+func TestCreateLoadBalancerDecodesAcceptedResponseAndIdempotencyKey(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/load-balancers" {
+			t.Errorf("request = %s %s, want POST /load-balancers", r.Method, r.URL.Path)
+		}
+		if got := r.Header.Get("Idempotency-Key"); got != "order-123" {
+			t.Errorf("Idempotency-Key = %q, want order-123", got)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+		} else if body["name"] != "edge" || body["vpc"] != float64(12) {
+			t.Errorf("request body = %#v, want name=edge and vpc=12", body)
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"data":{"id":8,"name":"edge","status":"pending","vpc":12,"pools":[],"listeners":[],"certificates":[],"config_applied":false,"created_at":"2026-10-06T12:00:00Z"}}`))
+	}))
+	defer server.Close()
+
+	apiClient := NewClient(server.URL, "test-token")
+	apiClient.HTTPClient = server.Client()
+	response, err := apiClient.CreateLoadBalancer(context.Background(), "edge", 12, "order-123")
+	if err != nil {
+		t.Fatalf("CreateLoadBalancer() error = %v", err)
+	}
+	if response.Data.ID != 8 || response.Data.VPC != 12 || response.Data.Status != "pending" {
+		t.Errorf("CreateLoadBalancer() = %#v, want decoded pending LB 8", response.Data)
+	}
+}
+
+func TestGetLoadBalancerMetricsAddsRange(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/load-balancers/8/metrics" || r.URL.Query().Get("range") != "24h" {
+			t.Errorf("request = %s %s?%s, want GET metrics range=24h", r.Method, r.URL.Path, r.URL.RawQuery)
+		}
+		_, _ = w.Write([]byte(`{"data":{"range":"24h","step_minutes":15,"points":[{"at":"2026-10-06T12:00:00Z","requests":4,"http_2xx":3,"http_5xx":1,"connections":2,"bytes_in":100,"bytes_out":200,"sessions_max":5}],"totals":{"requests":4,"errors_pct":25,"bytes":300,"sessions_max":5}}}`))
+	}))
+	defer server.Close()
+
+	apiClient := NewClient(server.URL, "test-token")
+	apiClient.HTTPClient = server.Client()
+	response, err := apiClient.GetLoadBalancerMetrics(context.Background(), 8, "24h")
+	if err != nil {
+		t.Fatalf("GetLoadBalancerMetrics() error = %v", err)
+	}
+	if response.Data.StepMinutes != 15 || response.Data.Totals.Requests != 4 || response.Data.Points[0].HTTP5xx != 1 {
+		t.Errorf("metrics = %#v, want decoded interval, totals, and point", response.Data)
+	}
+}

@@ -40,7 +40,7 @@ func (r *VPCResource) Metadata(ctx context.Context, req resource.MetadataRequest
 
 func (r *VPCResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Creates and manages a private IPv4 network in FFXF Cloud. The network is ready when creation completes. Changing the name, CIDR, or region replaces the network.",
+		Description: "Creates and manages a private IPv4 network in FFXF Cloud. The network is ready when creation completes. When the network quota is reached, the API error includes details.increase_url for the console quota request flow. Changing the name, CIDR, or region replaces the network.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.Int64Attribute{
 				Computed:    true,

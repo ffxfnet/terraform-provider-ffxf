@@ -3,12 +3,12 @@
 page_title: "ffxf_instance Resource - ffxf"
 subcategory: ""
 description: |-
-  Creates and manages an FFXF Cloud virtual machine. Choose a plan, region, and image that are available together in your account. Changing the plan, region, image, or billing mode replaces the machine; changing the hostname updates it in place.
+  Creates and manages an FFXF Cloud virtual machine. Choose a plan, region, and image that are available together in your account. When the machine quota is reached, the API error includes details.increase_url for the console quota request flow. Changing the plan, region, image, or billing mode replaces the machine; changing the hostname updates it in place.
 ---
 
 # ffxf_instance (Resource)
 
-Creates and manages an FFXF Cloud virtual machine. Choose a plan, region, and image that are available together in your account. Changing the plan, region, image, or billing mode replaces the machine; changing the hostname updates it in place.
+Creates and manages an FFXF Cloud virtual machine. Choose a plan, region, and image that are available together in your account. When the machine quota is reached, the API error includes details.increase_url for the console quota request flow. Changing the plan, region, image, or billing mode replaces the machine; changing the hostname updates it in place.
 
 ## Example Usage
 

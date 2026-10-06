@@ -38,7 +38,7 @@ output "image_supports_ssh_keys" {
 - `category` (String) Image category: linux, windows, bsd, app, or other.
 - `default_user` (String) Default account name on the image.
 - `family` (String) Operating system or application family.
-- `min_disk_gb` (Number) Minimum compatible disk size in GiB, when specified.
+- `min_disk_gb` (Number) Minimum compatible disk size in GiB. Proxmox does not shrink a clone below the image size.
 - `min_memory_mb` (Number) Minimum compatible memory in MiB, when specified.
 - `name` (String) Display name of the image.
 - `regions` (List of String) Region slugs where the image is offered.
