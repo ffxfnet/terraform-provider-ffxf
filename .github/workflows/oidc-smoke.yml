@@ -1,0 +1,21 @@
+name: OIDC smoke test
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  validate-oidc:
+    if: startsWith(github.ref, 'refs/heads/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      OIDC_AUDIENCE: ffxf-oidc-h3x1pbji8lkwjvyzqnzse3h0ploa1ers6uh91y3g
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate GitHub OIDC token with read-only API call
+        run: bash tests/acceptance/oidc-smoke.sh

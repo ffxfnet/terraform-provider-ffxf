@@ -54,6 +54,6 @@ The `billing` argument is optional and defaults to `hourly`. The provider also a
 
 ## Live OIDC acceptance test
 
-The `OIDC acceptance test` GitHub Actions workflow can be started manually from a branch. It builds the provider from the current checkout, uses a GitHub Actions OIDC token to look up the test catalog entries, creates an hourly `nano` VM in `montreal`, and attempts to destroy it even if creation fails. The end-to-end test configuration is under `tests/acceptance`. The account needs enough credit for hourly VM creation.
+The `OIDC smoke test` workflow can be started manually from a branch to validate a GitHub Actions OIDC token with the read-only `GET /vms` API call (`vms.read`), without creating a VM. The `OIDC acceptance test` workflow also runs this check first, then builds the provider from the current checkout, creates an hourly `nano` VM in `montreal`, and attempts to destroy it even if creation fails. The smoke test script is `tests/acceptance/oidc-smoke.sh`; the end-to-end Terraform configuration is under `tests/acceptance`. The account needs enough credit for hourly VM creation.
 
 Configure the FFXF OIDC binding for audience `ffxf-oidc-h3x1pbji8lkwjvyzqnzse3h0ploa1ers6uh91y3g`, subject `repo:ffxfnet/ffxf-terraform-provider-ffxf:ref:refs/heads/*`, and the `catalog.read`, `vms.read`, `vms.create`, and `vms.destroy` permissions. The workflow is limited to branch refs to match that binding.

@@ -25,6 +25,9 @@ jobs:
 
       - uses: opentofu/setup-opentofu@v1
 
+      - name: Validate GitHub OIDC token with read-only API call
+        run: bash tests/acceptance/oidc-smoke.sh
+
       - name: Build provider and configure local override
         id: provider
         run: |
