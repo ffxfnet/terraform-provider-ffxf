@@ -1,0 +1,60 @@
+name: OIDC acceptance test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  vm-lifecycle:
+    if: startsWith(github.ref, 'refs/heads/')
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_run_id: ${{ github.run_id }}
+      TF_VAR_run_attempt: ${{ github.run_attempt }}
+      OIDC_AUDIENCE: ffxf-oidc-h3x1pbji8lkwjvyzqnzse3h0ploa1ers6uh91y3g
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: opentofu/setup-opentofu@v1
+
+      - name: Build provider and configure local override
+        id: provider
+        run: |
+          mkdir -p "$RUNNER_TEMP/ffxf-provider"
+          go build -o "$RUNNER_TEMP/ffxf-provider/terraform-provider-ffxf" .
+          cat > "$RUNNER_TEMP/ffxf.tfrc" <<EOF
+          provider_installation {
+            dev_overrides {
+              "registry.opentofu.org/ffxfnet/ffxf" = "$RUNNER_TEMP/ffxf-provider"
+            }
+            direct {}
+          }
+          EOF
+          echo "TF_CLI_CONFIG_FILE=$RUNNER_TEMP/ffxf.tfrc" >> "$GITHUB_ENV"
+
+      - name: Create VM with GitHub OIDC
+        working-directory: tests/acceptance
+        run: |
+          oidc_token="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUDIENCE}" | jq --exit-status --raw-output '.value')"
+          echo "::add-mask::$oidc_token"
+          FFXF_TOKEN="$oidc_token" tofu apply -input=false -auto-approve
+
+      - name: Destroy VM with GitHub OIDC
+        if: ${{ always() && steps.provider.outcome == 'success' }}
+        working-directory: tests/acceptance
+        run: |
+          oidc_token="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUDIENCE}" | jq --exit-status --raw-output '.value')"
+          echo "::add-mask::$oidc_token"
+          FFXF_TOKEN="$oidc_token" tofu destroy -input=false -auto-approve
