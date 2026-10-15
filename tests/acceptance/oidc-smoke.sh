@@ -18,6 +18,36 @@ oidc_token="$(
 )"
 echo "::add-mask::$oidc_token"
 
+printf '%s' "$oidc_token" |
+  python3 -c '
+import base64
+import json
+import sys
+
+parts = sys.stdin.read().split(".")
+if len(parts) != 3:
+    raise SystemExit("GitHub returned a token that is not a JWT.")
+
+payload = parts[1]
+payload += "=" * (-len(payload) % 4)
+claims = json.loads(base64.urlsafe_b64decode(payload))
+keys = (
+    "iss",
+    "aud",
+    "sub",
+    "repository",
+    "repository_id",
+    "repository_owner",
+    "repository_owner_id",
+    "ref",
+    "event_name",
+    "workflow_ref",
+    "job_workflow_ref",
+)
+print("OIDC token identity claims (decoded locally; signature is verified by the API):")
+print(json.dumps({key: claims[key] for key in keys if key in claims}, indent=2))
+'
+
 http_status="$(
   curl --silent --show-error \
     --output "$response_file" \
