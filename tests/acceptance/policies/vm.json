@@ -1,0 +1,37 @@
+{
+  "version": "2026-10-01",
+  "statements": [
+    {
+      "effect": "allow",
+      "actions": [
+        "action:read",
+        "firewall.member:create",
+        "firewall.member:delete",
+        "firewall:create",
+        "firewall:delete",
+        "firewall:read",
+        "firewall:update",
+        "sshkey:create",
+        "sshkey:delete",
+        "sshkey:read",
+        "vm.backup:read",
+        "vm.ipv*:create",
+        "vm.ipv*:delete",
+        "vm.rdns:update",
+        "vm:action",
+        "vm:create",
+        "vm:delete",
+        "vm:read",
+        "vm:update",
+        "vpc.member:create",
+        "vpc.member:delete",
+        "vpc:create",
+        "vpc:delete",
+        "vpc:read"
+      ],
+      "resources": [
+        "*"
+      ]
+    }
+  ]
+}

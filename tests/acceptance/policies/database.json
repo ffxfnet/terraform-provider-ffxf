@@ -1,0 +1,25 @@
+{
+  "version": "2026-10-01",
+  "statements": [
+    {
+      "effect": "allow",
+      "actions": [
+        "action:read",
+        "database.credential:read",
+        "database.logical:create",
+        "database.logical:delete",
+        "database.user:create",
+        "database.user:delete",
+        "database:create",
+        "database:delete",
+        "database:read",
+        "vpc:create",
+        "vpc:delete",
+        "vpc:read"
+      ],
+      "resources": [
+        "*"
+      ]
+    }
+  ]
+}
