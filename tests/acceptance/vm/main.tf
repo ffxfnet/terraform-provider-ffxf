@@ -28,12 +28,6 @@ data "ffxf_image" "test" {
   slug = "debian-13"
 }
 
-variable "enable_beta" {
-  description = "Also exercise beta services (managed databases, GitHub runners). Requires beta access on the account."
-  type        = bool
-  default     = false
-}
-
 locals {
   name = "gha-${var.run_id}-${var.run_attempt}"
 }
@@ -142,55 +136,6 @@ data "ffxf_vm_actions" "acceptance" {
   vm_id = ffxf_instance.acceptance.id
 
   depends_on = [ffxf_vm_power_state.acceptance]
-}
-
-data "ffxf_account" "current" {}
-
-data "ffxf_usage" "current" {
-  group_by = "vm"
-}
-
-# Beta services are billed and gated per account, so they only run on request.
-data "ffxf_database_options" "catalog" {
-  count = var.enable_beta ? 1 : 0
-}
-
-data "ffxf_runners" "current" {
-  count = var.enable_beta ? 1 : 0
-}
-
-data "ffxf_runner_jobs" "current" {
-  count = var.enable_beta ? 1 : 0
-}
-
-resource "ffxf_database" "acceptance" {
-  count = var.enable_beta ? 1 : 0
-
-  name   = local.name
-  vpc    = ffxf_vpc.acceptance.id
-  engine = "postgresql"
-}
-
-resource "ffxf_database_user" "acceptance" {
-  count = var.enable_beta ? 1 : 0
-
-  database_id = ffxf_database.acceptance[0].id
-  username    = "acceptance"
-}
-
-resource "ffxf_database_logical_database" "acceptance" {
-  count = var.enable_beta ? 1 : 0
-
-  database_id = ffxf_database.acceptance[0].id
-  name        = "acceptance"
-}
-
-data "ffxf_database_credentials" "acceptance" {
-  count = var.enable_beta ? 1 : 0
-
-  database_id = ffxf_database.acceptance[0].id
-
-  depends_on = [ffxf_database_user.acceptance]
 }
 
 check "acceptance_outputs" {
