@@ -66,6 +66,7 @@ type VM struct {
 	Billing  struct {
 		Mode string `json:"mode"`
 	} `json:"billing"`
+	VMAreaIPv6 *string `json:"ipv6"`
 }
 
 type VMResponse struct {
@@ -409,19 +410,6 @@ func (c *Client) WaitForAction(ctx context.Context, actionID int) error {
 }
 
 func (c *Client) DeleteVM(ctx context.Context, vmID int, hostname string) error {
-	url := fmt.Sprintf("%s/vms/%d?confirm=%s&when=now", c.BaseURL, vmID, hostname)
-	httpReq, _ := http.NewRequestWithContext(ctx, "DELETE", url, nil)
-	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
-
-	res, err := c.HTTPClient.Do(httpReq)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusAccepted && res.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to delete VM, HTTP status code %d", res.StatusCode)
-	}
-
-	return nil
+	_, err := c.VMAreaDeleteVMWithAction(ctx, vmID, hostname, "now")
+	return err
 }

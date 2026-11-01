@@ -8,7 +8,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/ffxfnet/terraform-provider-ffxf/internal/client"
@@ -25,13 +28,15 @@ func NewInstanceResource() resource.Resource {
 }
 
 type InstanceResourceModel struct {
-	ID       types.Int64  `tfsdk:"id"`
-	Hostname types.String `tfsdk:"hostname"`
-	Plan     types.String `tfsdk:"plan"`
-	Region   types.String `tfsdk:"region"`
-	Image    types.String `tfsdk:"image"`
-	Billing  types.String `tfsdk:"billing"`
-	IPv4     types.String `tfsdk:"ipv4"`
+	ID                types.Int64  `tfsdk:"id"`
+	Hostname          types.String `tfsdk:"hostname"`
+	Plan              types.String `tfsdk:"plan"`
+	Region            types.String `tfsdk:"region"`
+	Image             types.String `tfsdk:"image"`
+	Billing           types.String `tfsdk:"billing"`
+	IPv4              types.String `tfsdk:"ipv4"`
+	VMAreaSSHKeys     []string     `tfsdk:"ssh_keys"`
+	VMAreaDestroyWhen types.String `tfsdk:"destroy_when"`
 }
 
 func (r *InstanceResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -74,6 +79,16 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 				Computed:    true,
 				Description: "Public IPv4 address assigned to the machine, when available.",
 			},
+			"ssh_keys": schema.SetAttribute{
+				Optional: true, ElementType: types.StringType,
+				Description:   "Account SSH key fingerprints or IDs to install when provisioning. Changing this value replaces the machine.",
+				PlanModifiers: []planmodifier.Set{setplanmodifier.RequiresReplace()},
+			},
+			"destroy_when": schema.StringAttribute{
+				Optional: true, Computed: true, Default: stringdefault.StaticString("now"),
+				Description: "When to terminate the machine: now (default) or period_end.",
+				Validators:  []validator.String{VMAreaStringOneOfValidator{Values: []string{"now", "period_end"}}},
+			},
 		},
 	}
 }
@@ -105,6 +120,7 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		Image:    plan.Image.ValueString(),
 		Hostname: plan.Hostname.ValueString(),
 		Billing:  billingMode,
+		SSHKeys:  plan.VMAreaSSHKeys,
 	}, idempotencyKey)
 
 	if err != nil {
@@ -191,8 +207,18 @@ func (r *InstanceResource) Delete(ctx context.Context, req resource.DeleteReques
 		return
 	}
 
-	err := r.client.DeleteVM(ctx, int(state.ID.ValueInt64()), state.Hostname.ValueString())
+	when := state.VMAreaDestroyWhen.ValueString()
+	if when == "" {
+		when = "now"
+	}
+	actionID, err := r.client.VMAreaDeleteVMWithAction(ctx, int(state.ID.ValueInt64()), state.Hostname.ValueString(), when)
 	if err != nil {
 		resp.Diagnostics.AddError("Error deleting VM", err.Error())
+		return
+	}
+	if actionID != 0 {
+		if err := r.client.WaitForAction(ctx, actionID); err != nil {
+			resp.Diagnostics.AddError("Error waiting for VM deletion", err.Error())
+		}
 	}
 }
