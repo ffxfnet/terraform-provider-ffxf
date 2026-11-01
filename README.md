@@ -75,4 +75,13 @@ The OIDC acceptance workflow (`.github/workflows/acceptance.yml`) runs one job p
 
 `all` runs `vm` and `account`; set `enable_beta` to add `database` and `runners`, which are billed and need beta access. `ffxf_vm_reinstall`, `ffxf_vm_backup_restore` and `ffxf_account_budget` are not exercised there because they wipe a disk or change account-wide settings. Every resource and data source also has mock-based OpenTofu tests in `tests/terraform`, run with `sh tests/terraform/run.sh`.
 
-Grant only the scopes needed by the configuration. An `ffxf_instance` lifecycle needs `vms.read`, `vms.create`, and `vms.destroy`; the `vm` area also needs `network.write`, and the `database` area needs the database scopes; catalog lookups for regions, plans, and images are public and do not require `catalog.read`.
+Grant only the scopes needed by the configuration. A call outside the OIDC binding's scopes is refused with `403 insufficient_scope`; the access-management policy actions (`policy:*`, `role:*`, `api-key:*`, `oidc-*:*`) only control who can manage keys and bindings and do not authorize any of these calls. Catalog lookups for regions, plans, and images are public and do not require `catalog.read`. The scopes below come from the OpenAPI specification; the `vm` row is partly inferred because the spec does not state a scope on every VM endpoint.
+
+| Area | Scopes |
+|---|---|
+| `vm` | `vms.read`, `vms.create`, `vms.action`, `vms.destroy`, `network.write`, `sshkeys.write` |
+| `account` | `billing.read` |
+| `database` (beta) | `vms.read`, `vms.create`, `vms.destroy`, `databases.write`, `network.write` |
+| `runners` (beta) | `billing.read` |
+
+Beyond the resources exercised by the acceptance run: `ffxf_account_budget` needs `billing.write`, database backups and `ffxf_vm_backup_restore` need `backups.write`, and `ffxf_vm_reinstall` needs `vms.action`.
