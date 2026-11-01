@@ -800,3 +800,30 @@ func TestDatabaseCredentialPasswordRejectsMissingPassword(t *testing.T) {
 		t.Fatal("malformed credentials should be an error")
 	}
 }
+
+func TestDatabaseResourceCreateKeepsStateWhenReadinessFails(t *testing.T) {
+	oldInterval, oldTimeout := databasePollInterval, databasePollTimeout
+	databasePollInterval, databasePollTimeout = time.Millisecond, time.Second
+	defer func() { databasePollInterval, databasePollTimeout = oldInterval, oldTimeout }()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"data":{"id":12,"name":"orders","status":"pending","engine":"postgresql","version":"18","vpc":8}}`))
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	resourceImpl := &databaseResource{client: testAPIClient(server)}
+	plan := newDatabasePlan(t, databaseResourceModel{Name: types.StringValue("orders"), VPC: types.Int64Value(8), Engine: types.StringNull(), Version: types.StringNull(), SizeGB: types.Int64Null(), Billing: types.StringNull(), MaintenanceDay: types.Int64Null(), MaintenanceHour: types.Int64Null(), DiskCapGB: types.Int64Null(), EvictionPolicy: types.StringNull()})
+	response := resource.CreateResponse{State: newDatabaseState(t, databaseResourceModel{})}
+	resourceImpl.Create(context.Background(), resource.CreateRequest{Plan: plan}, &response)
+	if !response.Diagnostics.HasError() {
+		t.Fatal("Create should report the readiness failure")
+	}
+	var got databaseResourceModel
+	_ = response.State.Get(context.Background(), &got)
+	if got.ID.ValueInt64() != 12 {
+		t.Fatalf("created database must stay in state so it can be destroyed, got %#v", got)
+	}
+}

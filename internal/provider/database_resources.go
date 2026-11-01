@@ -133,6 +133,9 @@ func (r *databaseResource) Create(ctx context.Context, req resource.CreateReques
 	}
 	ready, err := databaseWaitReady(ctx, r.client, database.Data)
 	if err != nil {
+		// Persist the created database so Terraform marks it tainted instead of leaking it.
+		databaseSetResourceModel(ctx, &plan, database.Data, &resp.Diagnostics)
+		resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 		resp.Diagnostics.AddError("Error waiting for FFXF database readiness", err.Error())
 		return
 	}

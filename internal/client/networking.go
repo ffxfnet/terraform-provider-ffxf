@@ -344,7 +344,7 @@ func (c *Client) networkRequestWithHeaders(ctx context.Context, method, path str
 	if err != nil {
 		return err
 	}
-	request.Header.Set("Authorization", "Bearer "+c.Token)
+	request.Header.Set("Authorization", "Bearer "+c.bearerToken())
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}

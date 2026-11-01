@@ -48,7 +48,7 @@ func (p *FFXFProvider) Schema(ctx context.Context, req provider.SchemaRequest, r
 			"token": schema.StringAttribute{
 				Optional:    true,
 				Sensitive:   true,
-				Description: "FFXF Cloud API token. If omitted, the provider reads FFXF_TOKEN from the environment.",
+				Description: "FFXF Cloud API token. If omitted, the provider reads FFXF_TOKEN from the environment. When FFXF_TOKEN_FILE points to a readable file, its content is re-read on every request and takes precedence, which lets short-lived tokens be rotated during long applies.",
 			},
 		},
 	}
@@ -81,6 +81,7 @@ func (p *FFXFProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	}
 
 	apiClient := client.NewClient(endpoint, token)
+	apiClient.TokenFile = os.Getenv("FFXF_TOKEN_FILE")
 	resp.DataSourceData = apiClient
 	resp.ResourceData = apiClient
 }

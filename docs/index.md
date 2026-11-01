@@ -38,4 +38,4 @@ provider "ffxf" {
 ### Optional
 
 - `endpoint` (String) FFXF Cloud API base URL. Defaults to https://api.ffxf.net/v1. Can also be set with FFXF_ENDPOINT.
-- `token` (String, Sensitive) FFXF Cloud API token. If omitted, the provider reads FFXF_TOKEN from the environment.
+- `token` (String, Sensitive) FFXF Cloud API token. If omitted, the provider reads FFXF_TOKEN from the environment. When FFXF_TOKEN_FILE points to a readable file, its content is re-read on every request and takes precedence, which lets short-lived tokens be rotated during long applies.

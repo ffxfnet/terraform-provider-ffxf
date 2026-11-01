@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -226,5 +228,29 @@ func TestAPIErrorDetailIsAppendedToVMAndVPCErrors(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "insufficient_scope: missing vm:create") {
 			t.Errorf("%s error = %v, want the API error detail", name, err)
 		}
+	}
+}
+
+func TestBearerTokenPrefersFreshTokenFile(t *testing.T) {
+	apiClient := NewClient("http://example.invalid", "static")
+	if got := apiClient.bearerToken(); got != "static" {
+		t.Fatalf("unexpected token %q", got)
+	}
+	path := filepath.Join(t.TempDir(), "token")
+	apiClient.TokenFile = path
+	if got := apiClient.bearerToken(); got != "static" {
+		t.Fatalf("missing file should fall back, got %q", got)
+	}
+	if err := os.WriteFile(path, []byte("rotated\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := apiClient.bearerToken(); got != "rotated" {
+		t.Fatalf("expected rotated token, got %q", got)
+	}
+	if err := os.WriteFile(path, []byte("  \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := apiClient.bearerToken(); got != "static" {
+		t.Fatalf("blank file should fall back, got %q", got)
 	}
 }

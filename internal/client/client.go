@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -17,6 +19,7 @@ var ErrVPCNotFound = errors.New("VPC not found")
 type Client struct {
 	BaseURL    string
 	Token      string
+	TokenFile  string
 	HTTPClient *http.Client
 }
 
@@ -29,6 +32,19 @@ func NewClient(baseURL, token string) *Client {
 		Token:      token,
 		HTTPClient: &http.Client{Timeout: 30 * time.Second},
 	}
+}
+
+// bearerToken returns the freshest credential. When TokenFile is set and
+// readable, it wins over Token so short-lived tokens can be rotated mid-run.
+func (c *Client) bearerToken() string {
+	if c.TokenFile != "" {
+		if data, err := os.ReadFile(c.TokenFile); err == nil {
+			if token := strings.TrimSpace(string(data)); token != "" {
+				return token
+			}
+		}
+	}
+	return c.Token
 }
 
 type CreateVmRequest struct {
@@ -200,7 +216,7 @@ func (c *Client) CreateVPC(ctx context.Context, req CreateVPCRequest) (*VPCRespo
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	httpReq.Header.Set("Authorization", "Bearer "+c.bearerToken())
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	res, err := c.HTTPClient.Do(httpReq)
@@ -225,7 +241,7 @@ func (c *Client) GetVPC(ctx context.Context, vpcID int64) (*VPCResponse, error) 
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	httpReq.Header.Set("Authorization", "Bearer "+c.bearerToken())
 
 	res, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
@@ -251,7 +267,7 @@ func (c *Client) DeleteVPC(ctx context.Context, vpcID int64) error {
 	if err != nil {
 		return err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	httpReq.Header.Set("Authorization", "Bearer "+c.bearerToken())
 
 	res, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
@@ -269,7 +285,7 @@ func (c *Client) get(ctx context.Context, path string, target any) error {
 	if err != nil {
 		return err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	httpReq.Header.Set("Authorization", "Bearer "+c.bearerToken())
 
 	res, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
@@ -294,7 +310,7 @@ func (c *Client) CreateVM(ctx context.Context, req CreateVmRequest, idempotencyK
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	httpReq.Header.Set("Authorization", "Bearer "+c.bearerToken())
 	httpReq.Header.Set("Idempotency-Key", idempotencyKey)
 
 	res, err := c.HTTPClient.Do(httpReq)
@@ -320,7 +336,7 @@ func (c *Client) GetVM(ctx context.Context, vmID int64) (*VMResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	httpReq.Header.Set("Authorization", "Bearer "+c.bearerToken())
 
 	res, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
@@ -353,7 +369,7 @@ func (c *Client) UpdateVM(ctx context.Context, vmID int64, hostname string) (*VM
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	httpReq.Header.Set("Authorization", "Bearer "+c.bearerToken())
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	res, err := c.HTTPClient.Do(httpReq)
@@ -384,7 +400,7 @@ func (c *Client) WaitForAction(ctx context.Context, actionID int) error {
 			return ctx.Err()
 		case <-ticker.C:
 			httpReq, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/actions/%d", c.BaseURL, actionID), nil)
-			httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+			httpReq.Header.Set("Authorization", "Bearer "+c.bearerToken())
 
 			res, err := c.HTTPClient.Do(httpReq)
 			if err != nil {

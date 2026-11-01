@@ -252,7 +252,7 @@ func (c *Client) VMAreaDeleteVMWithAction(ctx context.Context, vmID int, hostnam
 	if err != nil {
 		return 0, err
 	}
-	request.Header.Set("Authorization", "Bearer "+c.Token)
+	request.Header.Set("Authorization", "Bearer "+c.bearerToken())
 	response, err := c.HTTPClient.Do(request)
 	if err != nil {
 		return 0, err

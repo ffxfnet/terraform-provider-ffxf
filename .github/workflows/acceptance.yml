@@ -81,17 +81,35 @@ jobs:
 
       - name: Create ${{ matrix.area }} resources with GitHub OIDC
         run: |
-          oidc_token="$(curl --fail --silent --show-error \
-            -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUDIENCE}" | jq --exit-status --raw-output '.value')"
+          fetch_token() {
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUDIENCE}" | jq --exit-status --raw-output '.value'
+          }
+          export FFXF_TOKEN_FILE="$RUNNER_TEMP/ffxf-token"
+          oidc_token="$(fetch_token)"
           echo "::add-mask::$oidc_token"
+          printf '%s' "$oidc_token" > "$FFXF_TOKEN_FILE"
+          # GitHub OIDC tokens expire after about 5 minutes; keep the file fresh for long applies.
+          (while sleep 120; do fetch_token > "$FFXF_TOKEN_FILE.new" && mv "$FFXF_TOKEN_FILE.new" "$FFXF_TOKEN_FILE"; done) &
+          refresher=$!
+          trap 'kill $refresher' EXIT
           FFXF_TOKEN="$oidc_token" tofu apply -input=false -auto-approve
 
       - name: Destroy ${{ matrix.area }} resources with GitHub OIDC
         if: ${{ always() && steps.provider.outcome == 'success' }}
         run: |
-          oidc_token="$(curl --fail --silent --show-error \
-            -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUDIENCE}" | jq --exit-status --raw-output '.value')"
+          fetch_token() {
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUDIENCE}" | jq --exit-status --raw-output '.value'
+          }
+          export FFXF_TOKEN_FILE="$RUNNER_TEMP/ffxf-token"
+          oidc_token="$(fetch_token)"
           echo "::add-mask::$oidc_token"
+          printf '%s' "$oidc_token" > "$FFXF_TOKEN_FILE"
+          # GitHub OIDC tokens expire after about 5 minutes; keep the file fresh for long applies.
+          (while sleep 120; do fetch_token > "$FFXF_TOKEN_FILE.new" && mv "$FFXF_TOKEN_FILE.new" "$FFXF_TOKEN_FILE"; done) &
+          refresher=$!
+          trap 'kill $refresher' EXIT
           FFXF_TOKEN="$oidc_token" tofu destroy -input=false -auto-approve
