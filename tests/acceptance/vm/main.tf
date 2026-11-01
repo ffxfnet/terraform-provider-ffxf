@@ -94,11 +94,8 @@ resource "ffxf_vm_ipv6_address" "acceptance" {
   address = cidrhost(strcontains(data.ffxf_vm_network.acceptance.ipv6_prefix, "/") ? data.ffxf_vm_network.acceptance.ipv6_prefix : "${data.ffxf_vm_network.acceptance.ipv6_prefix}/64", 66)
 }
 
-resource "ffxf_vm_rdns" "acceptance" {
-  vm_id    = ffxf_instance.acceptance.id
-  address  = ffxf_vm_ipv6_address.acceptance.address
-  hostname = "${local.name}.example.net"
-}
+# ffxf_vm_rdns is not exercised: the API only accepts a hostname that already resolves to the address,
+# which needs a DNS record the workflow does not own.
 
 # Read-only lookups: these fail the run if the API shape drifts from the provider models.
 data "ffxf_plans" "all" {

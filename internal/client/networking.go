@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -369,5 +370,23 @@ func (c *Client) networkRequestWithHeaders(ctx context.Context, method, path str
 	if response.StatusCode == http.StatusNotFound {
 		return ErrNetworkResourceNotFound
 	}
-	return fmt.Errorf("API HTTP error %d during %s %s", response.StatusCode, method, path)
+	return fmt.Errorf("API HTTP error %d during %s %s%s", response.StatusCode, method, path, apiErrorDetail(response))
+}
+
+// apiErrorDetail returns ": code: message" from the API error envelope, or "" when the body has none.
+func apiErrorDetail(response *http.Response) string {
+	var envelope struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, 4096))
+	if err != nil || json.Unmarshal(body, &envelope) != nil || envelope.Error.Message == "" {
+		return ""
+	}
+	if envelope.Error.Code == "" {
+		return ": " + envelope.Error.Message
+	}
+	return ": " + envelope.Error.Code + ": " + envelope.Error.Message
 }

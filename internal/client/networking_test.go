@@ -183,3 +183,48 @@ func TestNetworkRequestErrors(t *testing.T) {
 		}
 	})
 }
+
+func TestAPIErrorDetailIsAppendedToErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"code and message", `{"error":{"code":"validation_failed","message":"hostname does not resolve to the address"}}`, "API HTTP error 400 during PUT /x: validation_failed: hostname does not resolve to the address"},
+		{"message only", `{"error":{"message":"nope"}}`, "API HTTP error 400 during PUT /x: nope"},
+		{"empty message", `{"error":{"code":"x"}}`, "API HTTP error 400 during PUT /x"},
+		{"not json", `<html>bad gateway</html>`, "API HTTP error 400 during PUT /x"},
+		{"empty body", ``, "API HTTP error 400 during PUT /x"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(test.body))
+			}))
+			defer server.Close()
+			err := NewClient(server.URL, "token").networkRequest(context.Background(), http.MethodPut, "/x", nil, nil, http.StatusOK)
+			if err == nil || err.Error() != test.want {
+				t.Errorf("error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestAPIErrorDetailIsAppendedToVMAndVPCErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"error":{"code":"insufficient_scope","message":"missing vm:create"}}`))
+	}))
+	defer server.Close()
+	api := NewClient(server.URL, "token")
+	ctx := context.Background()
+	_, createErr := api.CreateVM(ctx, CreateVmRequest{}, "key")
+	_, vpcErr := api.CreateVPC(ctx, CreateVPCRequest{})
+	_, getErr := api.GetVM(ctx, 1)
+	for name, err := range map[string]error{"CreateVM": createErr, "CreateVPC": vpcErr, "GetVM": getErr} {
+		if err == nil || !strings.Contains(err.Error(), "insufficient_scope: missing vm:create") {
+			t.Errorf("%s error = %v, want the API error detail", name, err)
+		}
+	}
+}

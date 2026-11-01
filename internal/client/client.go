@@ -209,7 +209,7 @@ func (c *Client) CreateVPC(ctx context.Context, req CreateVPCRequest) (*VPCRespo
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("API HTTP error %d during VPC creation", res.StatusCode)
+		return nil, fmt.Errorf("API HTTP error %d during VPC creation%s", res.StatusCode, apiErrorDetail(res))
 	}
 
 	var result VPCResponse
@@ -236,7 +236,7 @@ func (c *Client) GetVPC(ctx context.Context, vpcID int64) (*VPCResponse, error) 
 		return nil, ErrVPCNotFound
 	}
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API HTTP error %d during VPC read", res.StatusCode)
+		return nil, fmt.Errorf("API HTTP error %d during VPC read%s", res.StatusCode, apiErrorDetail(res))
 	}
 
 	var result VPCResponse
@@ -259,7 +259,7 @@ func (c *Client) DeleteVPC(ctx context.Context, vpcID int64) error {
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusNoContent && res.StatusCode != http.StatusNotFound {
-		return fmt.Errorf("API HTTP error %d during VPC deletion", res.StatusCode)
+		return fmt.Errorf("API HTTP error %d during VPC deletion%s", res.StatusCode, apiErrorDetail(res))
 	}
 	return nil
 }
@@ -278,7 +278,7 @@ func (c *Client) get(ctx context.Context, path string, target any) error {
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("API HTTP error %d during GET %s", res.StatusCode, path)
+		return fmt.Errorf("API HTTP error %d during GET %s%s", res.StatusCode, path, apiErrorDetail(res))
 	}
 	if err := json.NewDecoder(res.Body).Decode(target); err != nil {
 		return err
@@ -304,7 +304,7 @@ func (c *Client) CreateVM(ctx context.Context, req CreateVmRequest, idempotencyK
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusAccepted && res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API HTTP error %d during creation", res.StatusCode)
+		return nil, fmt.Errorf("API HTTP error %d during creation%s", res.StatusCode, apiErrorDetail(res))
 	}
 
 	var result CreateVmResponse
@@ -332,7 +332,7 @@ func (c *Client) GetVM(ctx context.Context, vmID int64) (*VMResponse, error) {
 		return nil, ErrVMNotFound
 	}
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API HTTP error %d during read", res.StatusCode)
+		return nil, fmt.Errorf("API HTTP error %d during read%s", res.StatusCode, apiErrorDetail(res))
 	}
 
 	var result VMResponse
@@ -363,7 +363,7 @@ func (c *Client) UpdateVM(ctx context.Context, vmID int64, hostname string) (*VM
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API HTTP error %d during update", res.StatusCode)
+		return nil, fmt.Errorf("API HTTP error %d during update%s", res.StatusCode, apiErrorDetail(res))
 	}
 
 	var result VMResponse

@@ -143,7 +143,7 @@ func (r *VMAreaRDNSResource) Metadata(ctx context.Context, req resource.Metadata
 	resp.TypeName = req.ProviderTypeName + "_vm_rdns"
 }
 func (r *VMAreaRDNSResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
-	resp.Schema = schema.Schema{Description: "Configures reverse DNS for an IP address assigned to a virtual machine. Destroying the resource clears the custom record and restores the default.", Attributes: map[string]schema.Attribute{"vm_id": schema.Int64Attribute{Required: true, Description: "Numeric ID of the virtual machine.", PlanModifiers: []planmodifier.Int64{int64planmodifier.RequiresReplace()}}, "address": schema.StringAttribute{Required: true, Description: "IP address assigned to the VM.", PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}, "hostname": schema.StringAttribute{Required: true, Description: "Reverse-DNS hostname to associate with the address."}}}
+	resp.Schema = schema.Schema{Description: "Configures reverse DNS for an IP address assigned to a virtual machine. The hostname must already resolve forward to the address, otherwise the API refuses it. Destroying the resource clears the custom record and restores the default.", Attributes: map[string]schema.Attribute{"vm_id": schema.Int64Attribute{Required: true, Description: "Numeric ID of the virtual machine.", PlanModifiers: []planmodifier.Int64{int64planmodifier.RequiresReplace()}}, "address": schema.StringAttribute{Required: true, Description: "IP address assigned to the VM.", PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}}, "hostname": schema.StringAttribute{Required: true, Description: "Reverse-DNS hostname to associate with the address."}}}
 }
 func (r *VMAreaRDNSResource) Configure(_ context.Context, req resource.ConfigureRequest, _ *resource.ConfigureResponse) {
 	if req.ProviderData != nil {
@@ -276,6 +276,14 @@ func vmAreaApplyPower(ctx context.Context, c *client.Client, m *VMAreaPowerState
 		action = "stop"
 	} else {
 		action = "shutdown"
+	}
+	// start and shutdown are refused when the machine is already in the wanted state.
+	if !reboot && (action == "start" || action == "shutdown" || action == "stop") {
+		if vm, err := c.GetVM(ctx, m.VMID.ValueInt64()); err == nil {
+			if (action == "start" && vm.Data.Status == "running") || (action != "start" && vm.Data.Status == "stopped") {
+				return nil
+			}
+		}
 	}
 	res, err := c.VMAreaPowerAction(ctx, m.VMID.ValueInt64(), action)
 	if err != nil {

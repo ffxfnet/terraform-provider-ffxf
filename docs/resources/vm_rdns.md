@@ -3,12 +3,12 @@
 page_title: "ffxf_vm_rdns Resource - ffxf"
 subcategory: ""
 description: |-
-  Configures reverse DNS for an IP address assigned to a virtual machine. Destroying the resource clears the custom record and restores the default.
+  Configures reverse DNS for an IP address assigned to a virtual machine. The hostname must already resolve forward to the address, otherwise the API refuses it. Destroying the resource clears the custom record and restores the default.
 ---
 
 # ffxf_vm_rdns (Resource)
 
-Configures reverse DNS for an IP address assigned to a virtual machine. Destroying the resource clears the custom record and restores the default.
+Configures reverse DNS for an IP address assigned to a virtual machine. The hostname must already resolve forward to the address, otherwise the API refuses it. Destroying the resource clears the custom record and restores the default.
 
 ## Example Usage
 

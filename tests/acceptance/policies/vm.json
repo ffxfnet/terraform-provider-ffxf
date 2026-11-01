@@ -17,7 +17,6 @@
         "vm.backup:read",
         "vm.ipv*:create",
         "vm.ipv*:delete",
-        "vm.rdns:update",
         "vm:action",
         "vm:create",
         "vm:delete",

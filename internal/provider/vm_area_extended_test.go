@@ -159,6 +159,8 @@ func TestVMAreaOneShotResourcesAndPowerUpdates(t *testing.T) {
 			}
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(`{"data":{"action":{"id":0}}}`))
+		case "GET /vms/7":
+			_, _ = w.Write([]byte(`{"data":{"id":7,"status":"unknown"}}`))
 		case "POST /vms/7/backups/backup-2/restore":
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(`{"data":{"action":{"id":0}}}`))

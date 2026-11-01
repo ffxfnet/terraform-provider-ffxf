@@ -68,7 +68,7 @@ The OIDC acceptance workflow (`.github/workflows/acceptance.yml`) runs one job p
 
 | Area | What it creates and destroys | What it reads |
 |---|---|---|
-| `vm` | SSH key, VPC, firewall, instance (with `ssh_keys`), firewall and VPC membership, power state, IPv6 address, reverse DNS | VM inventory, metrics, backups, actions, network, plans, images, VPCs, SSH keys |
+| `vm` | SSH key, VPC, firewall, instance (with `ssh_keys`), firewall and VPC membership, power state, IPv6 address | VM inventory, metrics, backups, actions, network, plans, images, VPCs, SSH keys |
 | `account` | nothing | account, usage, plan and image catalogs |
 | `database` (beta) | VPC, managed database, user, logical database | database options, credentials, inventory |
 | `runners` (beta) | nothing | runners, runner jobs |
@@ -77,4 +77,4 @@ The OIDC acceptance workflow (`.github/workflows/acceptance.yml`) runs one job p
 
 Grant only the permissions needed by the configuration. The OIDC binding acts through a role whose policies list `service:action` names; the access-management actions (`policy:*`, `role:*`, `api-key:*`, `oidc-*:*`) only control who can manage keys and bindings and do not authorize any of the calls below. A call outside the policies is refused with `403 insufficient_scope`. Catalog lookups for regions, plans, and images are public.
 
-Ready-to-paste policy documents for each acceptance area are in [`tests/acceptance/policies`](tests/acceptance/policies): `vm.json`, `account.json`, `database.json`, `runners.json`, and `all.json` (their union). Create a policy from the document, attach it to a role, and select that role on the binding. `ffxf_account_budget` additionally needs `billing:update`, `ffxf_vm_reinstall` needs `vm:action`, and `ffxf_vm_backup_restore` needs `vm.backup:restore`. The documents write `vm.ipv*:create` instead of `vm.ipv6:create` because the console's action-name check does not accept digits.
+Ready-to-paste policy documents for each acceptance area are in [`tests/acceptance/policies`](tests/acceptance/policies): `vm.json`, `account.json`, `database.json`, `runners.json`, and `all.json` (their union). Create a policy from the document, attach it to a role, and select that role on the binding. `ffxf_account_budget` additionally needs `billing:update`, `ffxf_vm_rdns` needs `vm.rdns:update` (and a hostname that already resolves to the address), `ffxf_vm_reinstall` needs `vm:action`, and `ffxf_vm_backup_restore` needs `vm.backup:restore`. The documents write `vm.ipv*:create` instead of `vm.ipv6:create` because the console's action-name check does not accept digits.
