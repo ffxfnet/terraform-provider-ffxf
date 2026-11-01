@@ -86,7 +86,7 @@ func (p *FFXFProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 }
 
 func (p *FFXFProvider) Resources(ctx context.Context) []func() resource.Resource {
-	return []func() resource.Resource{
+	resources := []func() resource.Resource{
 		NewInstanceResource,
 		NewVPCResource,
 		NewFirewallResource,
@@ -95,10 +95,14 @@ func (p *FFXFProvider) Resources(ctx context.Context) []func() resource.Resource
 		NewLoadBalancerPoolResource,
 		NewLoadBalancerListenerResource,
 	}
+	resources = append(resources, vmAreaResources()...)
+	resources = append(resources, accountAreaResources()...)
+	resources = append(resources, databaseAreaResources()...)
+	return resources
 }
 
 func (p *FFXFProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{
+	dataSources := []func() datasource.DataSource{
 		NewRegionDataSource,
 		NewPlanDataSource,
 		NewImageDataSource,
@@ -106,4 +110,8 @@ func (p *FFXFProvider) DataSources(ctx context.Context) []func() datasource.Data
 		NewLoadBalancersDataSource,
 		NewLoadBalancerMetricsDataSource,
 	}
+	dataSources = append(dataSources, vmAreaDataSources()...)
+	dataSources = append(dataSources, accountAreaDataSources()...)
+	dataSources = append(dataSources, databaseAreaDataSources()...)
+	return dataSources
 }

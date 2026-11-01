@@ -7,7 +7,7 @@ mock_provider "ffxf" {
 run "mock_vpc_member" {
   command = apply
   assert {
-    condition = ffxf_vpc_member.web.vpc_id == 12
+    condition     = ffxf_vpc_member.web.vpc_id == 12
     error_message = "VPC ID should match configuration"
   }
 }

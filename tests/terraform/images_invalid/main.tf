@@ -5,10 +5,10 @@ terraform {
 }
 provider "ffxf" {}
 variable "category" {
-  type = string
+  type    = string
   default = "linux"
   validation {
-    condition = contains(["linux", "windows", "bsd", "app", "other"], var.category)
+    condition     = contains(["linux", "windows", "bsd", "app", "other"], var.category)
     error_message = "invalid enum"
   }
 }

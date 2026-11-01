@@ -10,6 +10,6 @@ provider "ffxf" {}
 
 data "ffxf_runner_jobs" "repo" {
   repository = "owner/repo"
-  status = "queued"
-  limit = 25
+  status     = "queued"
+  limit      = 25
 }

@@ -7,7 +7,7 @@ mock_provider "ffxf" {
 run "mock_account" {
   command = apply
   assert {
-    condition = data.ffxf_account.current.account.currency == "CAD"
+    condition     = data.ffxf_account.current.account.currency == "CAD"
     error_message = "account currency should come from the mock"
   }
 }

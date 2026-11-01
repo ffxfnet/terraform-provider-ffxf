@@ -5,10 +5,10 @@ terraform {
 }
 provider "ffxf" {}
 variable "group_by" {
-  type = string
+  type    = string
   default = "hour"
   validation {
-    condition = contains(["hour", "vm"], var.group_by)
+    condition     = contains(["hour", "vm"], var.group_by)
     error_message = "invalid enum"
   }
 }

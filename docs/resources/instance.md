@@ -47,6 +47,8 @@ resource "ffxf_instance" "example" {
 ### Optional
 
 - `billing` (String) Billing mode: hourly or monthly. Defaults to hourly. Changing this value replaces the machine.
+- `destroy_when` (String) When to terminate the machine: now (default) or period_end.
+- `ssh_keys` (Set of String) Account SSH key fingerprints or IDs to install when provisioning. Changing this value replaces the machine.
 
 ### Read-Only
 

@@ -7,7 +7,7 @@ mock_provider "ffxf" {
 run "mock_account_budget" {
   command = apply
   assert {
-    condition = ffxf_account_budget.monthly.monthly == "150.00"
+    condition     = ffxf_account_budget.monthly.monthly == "150.00"
     error_message = "monthly budget should match configuration"
   }
 }

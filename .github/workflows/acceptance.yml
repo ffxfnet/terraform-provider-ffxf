@@ -2,6 +2,11 @@ name: OIDC acceptance test
 
 on:
   workflow_dispatch:
+    inputs:
+      enable_beta:
+        description: Also create and destroy beta services (managed database, runner lookups). Billed; needs beta access.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -14,6 +19,7 @@ jobs:
     env:
       TF_VAR_run_id: ${{ github.run_id }}
       TF_VAR_run_attempt: ${{ github.run_attempt }}
+      TF_VAR_enable_beta: ${{ inputs.enable_beta }}
       OIDC_AUDIENCE: ffxf-oidc-h3x1pbji8lkwjvyzqnzse3h0ploa1ers6uh91y3g
     steps:
       - uses: actions/checkout@v4

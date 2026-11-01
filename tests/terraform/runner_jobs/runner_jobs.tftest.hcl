@@ -7,7 +7,7 @@ mock_provider "ffxf" {
 run "mock_runner_jobs" {
   command = apply
   assert {
-    condition = length(data.ffxf_runner_jobs.repo.jobs) == 0
+    condition     = length(data.ffxf_runner_jobs.repo.jobs) == 0
     error_message = "runner jobs should be empty in the mock"
   }
 }

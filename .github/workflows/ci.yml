@@ -42,3 +42,9 @@ jobs:
 
       - name: Check OpenTofu example formatting
         run: tofu fmt -check -recursive examples
+
+      - name: Check OpenTofu test formatting
+        run: tofu fmt -check -recursive tests
+
+      - name: Run OpenTofu provider tests
+        run: sh tests/terraform/run.sh

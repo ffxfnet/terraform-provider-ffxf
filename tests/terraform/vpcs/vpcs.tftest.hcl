@@ -7,7 +7,7 @@ mock_provider "ffxf" {
 run "mock_vpcs" {
   command = apply
   assert {
-    condition = data.ffxf_vpcs.all.quota == 3
+    condition     = data.ffxf_vpcs.all.quota == 3
     error_message = "quota should come from the mock"
   }
 }

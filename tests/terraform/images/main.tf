@@ -9,8 +9,8 @@ terraform {
 provider "ffxf" {}
 
 data "ffxf_images" "catalog" {
-  region = "montreal"
-  plan = "nano"
+  region   = "montreal"
+  plan     = "nano"
   category = "linux"
 }
 

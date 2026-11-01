@@ -7,7 +7,7 @@ mock_provider "ffxf" {
 run "mock_ssh_key" {
   command = apply
   assert {
-    condition = ffxf_ssh_key.work.id == 12
+    condition     = ffxf_ssh_key.work.id == 12
     error_message = "SSH key ID should come from the mock"
   }
 }

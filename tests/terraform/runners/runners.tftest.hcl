@@ -7,7 +7,7 @@ mock_provider "ffxf" {
 run "mock_runners" {
   command = apply
   assert {
-    condition = length(data.ffxf_runners.current.runners.sizes) == 0
+    condition     = length(data.ffxf_runners.current.runners.sizes) == 0
     error_message = "runner sizes should be empty in the mock"
   }
 }
