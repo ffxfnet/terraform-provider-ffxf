@@ -461,13 +461,21 @@ func TestDatabaseResourceUpdatePatchesAndResizes(t *testing.T) {
 }
 
 func TestDatabaseDerivedReadDeleteAndDetachRead(t *testing.T) {
-	calls := 0
+	oldInterval, oldTimeout := databasePollInterval, databasePollTimeout
+	databasePollInterval, databasePollTimeout = time.Millisecond, time.Second
+	defer func() { databasePollInterval, databasePollTimeout = oldInterval, oldTimeout }()
+	calls, deleted := 0, false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		switch r.Method + " " + r.URL.Path {
 		case "GET /databases/55":
+			if deleted {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			_, _ = w.Write([]byte(`{"data":{"id":55,"status":"active","engine":"postgresql","version":"18"}}`))
 		case "DELETE /databases/55":
+			deleted = true
 			w.WriteHeader(http.StatusAccepted)
 		case "GET /databases/43":
 			_, _ = w.Write([]byte(`{"data":{"id":43,"status":"active"}}`))
@@ -511,8 +519,8 @@ func TestDatabaseDerivedReadDeleteAndDetachRead(t *testing.T) {
 		t.Fatalf("detach Read: %v", detachRead.Diagnostics)
 	}
 	detach.Delete(context.Background(), resource.DeleteRequest{}, &resource.DeleteResponse{})
-	if calls != 3 {
-		t.Fatalf("API calls = %d, want 3", calls)
+	if calls != 4 {
+		t.Fatalf("API calls = %d, want 4", calls)
 	}
 }
 
@@ -893,5 +901,44 @@ func TestDatabaseUserCreateResolvesUnknownReadOnly(t *testing.T) {
 	readOnly := created.Attributes()["read_only"].(types.Bool)
 	if response.Diagnostics.HasError() || readOnly.IsUnknown() || readOnly.IsNull() || readOnly.ValueBool() {
 		t.Fatalf("read_only must resolve to a known false, got %v (%v)", readOnly, response.Diagnostics)
+	}
+}
+
+func TestDatabaseDerivedCreateKeepsStateWhenReadinessFails(t *testing.T) {
+	oldInterval, oldTimeout := databasePollInterval, databasePollTimeout
+	databasePollInterval, databasePollTimeout = time.Millisecond, time.Second
+	defer func() { databasePollInterval, databasePollTimeout = oldInterval, oldTimeout }()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"data":{"id":77,"status":"pending","engine":"postgresql","version":"18","vpc":8}}`))
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	r := &databaseDerivedResource{client: testAPIClient(server), kind: "fork"}
+	var schemaResponse resource.SchemaResponse
+	r.Schema(context.Background(), resource.SchemaRequest{}, &schemaResponse)
+	objectType := schemaResponse.Schema.Type().TerraformType(context.Background()).(tftypes.Object)
+	values := map[string]tftypes.Value{}
+	for name, typ := range objectType.AttributeTypes {
+		values[name] = tftypes.NewValue(typ, nil)
+	}
+	values["source_database_id"] = tftypes.NewValue(objectType.AttributeTypes["source_database_id"], int64(9))
+	values["name"] = tftypes.NewValue(objectType.AttributeTypes["name"], "clone")
+	for _, name := range []string{"id", "status", "engine", "version", "vpc", "size_gb", "region", "database_json"} {
+		values[name] = tftypes.NewValue(objectType.AttributeTypes[name], tftypes.UnknownValue)
+	}
+	plan := tfsdk.Plan{Schema: schemaResponse.Schema, Raw: tftypes.NewValue(objectType, values)}
+	response := resource.CreateResponse{State: tfsdk.State{Schema: schemaResponse.Schema}}
+	r.Create(context.Background(), resource.CreateRequest{Plan: plan}, &response)
+	if !response.Diagnostics.HasError() {
+		t.Fatal("Create should report the readiness failure")
+	}
+	var got types.Object
+	_ = response.State.Get(context.Background(), &got)
+	if id, ok := got.Attributes()["id"].(types.Int64); !ok || id.ValueInt64() != 77 {
+		t.Fatalf("created fork must stay in state, got %v", got)
 	}
 }

@@ -146,6 +146,17 @@ func (r *LoadBalancerResource) Delete(ctx context.Context, req resource.DeleteRe
 	err := r.client.DeleteLoadBalancer(ctx, state.ID.ValueInt64())
 	if err != nil && !errors.Is(err, client.ErrNetworkResourceNotFound) {
 		resp.Diagnostics.AddError("Error deleting FFXF load balancer", err.Error())
+		return
+	}
+	if err == nil {
+		id := state.ID.ValueInt64()
+		waitErr := waitUntilGone(ctx, "load balancer", id, func(ctx context.Context) error {
+			_, getErr := r.client.GetLoadBalancer(ctx, id)
+			return getErr
+		})
+		if waitErr != nil {
+			resp.Diagnostics.AddError("Error waiting for FFXF load balancer deletion", waitErr.Error())
+		}
 	}
 }
 

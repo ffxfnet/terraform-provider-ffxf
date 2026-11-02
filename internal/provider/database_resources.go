@@ -231,6 +231,14 @@ func (r *databaseResource) Delete(ctx context.Context, req resource.DeleteReques
 // databaseWaitGone blocks until the asynchronous deletion finishes, because the
 // attached VPC cannot be deleted while the database still exists.
 func databaseWaitGone(ctx context.Context, apiClient *client.Client, id int64) error {
+	return waitUntilGone(ctx, "database", id, func(ctx context.Context) error {
+		_, err := apiClient.DatabaseGet(ctx, id)
+		return err
+	})
+}
+
+// waitUntilGone polls get until it reports ErrNetworkResourceNotFound.
+func waitUntilGone(ctx context.Context, kind string, id int64, get func(context.Context) error) error {
 	pollCtx, cancel := context.WithTimeout(ctx, databasePollTimeout)
 	defer cancel()
 	ticker := time.NewTicker(databasePollInterval)
@@ -238,9 +246,9 @@ func databaseWaitGone(ctx context.Context, apiClient *client.Client, id int64) e
 	for {
 		select {
 		case <-pollCtx.Done():
-			return fmt.Errorf("database %d was not deleted before timeout: %w", id, pollCtx.Err())
+			return fmt.Errorf("%s %d was not deleted before timeout: %w", kind, id, pollCtx.Err())
 		case <-ticker.C:
-			if _, err := apiClient.DatabaseGet(pollCtx, id); errors.Is(err, client.ErrNetworkResourceNotFound) {
+			if err := get(pollCtx); errors.Is(err, client.ErrNetworkResourceNotFound) {
 				return nil
 			} else if err != nil {
 				return err
@@ -416,6 +424,8 @@ func (r *databaseDerivedResource) Create(ctx context.Context, req resource.Creat
 	}
 	ready, err := databaseWaitReady(ctx, r.client, created.Data)
 	if err != nil {
+		databaseDerivedSetValues(attrs, created.Data, &resp.Diagnostics)
+		databaseDerivedSetState(ctx, &resp.Diagnostics, &resp.State, plan, attrs)
 		resp.Diagnostics.AddError("Error waiting for FFXF database readiness", err.Error())
 		return
 	}
@@ -449,9 +459,16 @@ func (r *databaseDerivedResource) Delete(ctx context.Context, req resource.Delet
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	err := r.client.DatabaseDelete(ctx, state.Attributes()["id"].(types.Int64).ValueInt64())
+	id := state.Attributes()["id"].(types.Int64).ValueInt64()
+	err := r.client.DatabaseDelete(ctx, id)
 	if err != nil && !errors.Is(err, client.ErrNetworkResourceNotFound) {
 		resp.Diagnostics.AddError("Error deleting FFXF derived database", err.Error())
+		return
+	}
+	if err == nil {
+		if waitErr := databaseWaitGone(ctx, r.client, id); waitErr != nil {
+			resp.Diagnostics.AddError("Error waiting for FFXF derived database deletion", waitErr.Error())
+		}
 	}
 }
 func databaseDerivedSetValues(attributes map[string]attr.Value, value client.Database, diagnostics *diag.Diagnostics) {
