@@ -70,11 +70,11 @@ The OIDC acceptance workflow (`.github/workflows/acceptance.yml`) runs one job p
 |---|---|---|
 | `vm` | SSH key, VPC, firewall, instance (with `ssh_keys`), firewall and VPC membership, power state, IPv6 address | VM inventory, metrics, backups, actions, network, plans, images, VPCs, SSH keys |
 | `account` | nothing | account, usage, plan and image catalogs |
-| `loadbalancer` | VPC, load balancer, pool (no targets), listener | nothing |
+| `loadbalancer` | VPC, instance, VPC membership, load balancer, pool with the VM as target, listener | nothing |
 | `database` (beta) | VPC, managed database, fork, user, logical database | database options, credentials, inventory |
 | `runners` (beta) | nothing | runners, runner jobs |
 
-`all` runs `vm`, `account` and `loadbalancer`; set `enable_beta` to add `database` and `runners`, which are billed and need beta access. `ffxf_vm_reinstall`, `ffxf_vm_backup_restore` and `ffxf_account_budget`, `ffxf_database_restore` and load balancer pool targets are not exercised there because they wipe a disk or change account-wide settings. Every resource and data source also has mock-based OpenTofu tests in `tests/terraform`, run with `sh tests/terraform/run.sh`.
+`all` runs `vm`, `account` and `loadbalancer`; set `enable_beta` to add `database` and `runners`, which are billed and need beta access. `ffxf_vm_reinstall`, `ffxf_vm_backup_restore` and `ffxf_account_budget` and `ffxf_database_restore` are not exercised there because they wipe a disk or change account-wide settings. Every resource and data source also has mock-based OpenTofu tests in `tests/terraform`, run with `sh tests/terraform/run.sh`.
 
 Grant only the permissions needed by the configuration. The OIDC binding acts through a role whose policies list `service:action` names; the access-management actions (`policy:*`, `role:*`, `api-key:*`, `oidc-*:*`) only control who can manage keys and bindings and do not authorize any of the calls below. A call outside the policies is refused with `403 insufficient_scope`. Catalog lookups for regions, plans, and images are public.
 

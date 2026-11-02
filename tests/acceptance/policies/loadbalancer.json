@@ -16,6 +16,12 @@
         "load-balancer:delete",
         "load-balancer:read",
         "load-balancer:update",
+        "vm:create",
+        "vm:delete",
+        "vm:read",
+        "vm:update",
+        "vpc.member:create",
+        "vpc.member:delete",
         "vpc:create",
         "vpc:delete",
         "vpc:read"
