@@ -193,8 +193,12 @@ func setFirewallModel(ctx context.Context, state *FirewallResourceModel, firewal
 	state.ID = types.Int64Value(firewall.ID)
 	state.Name = types.StringValue(firewall.Name)
 	state.CreatedAt = types.StringValue(firewall.CreatedAt)
+	var prior []FirewallRuleModel
+	if !state.Rules.IsNull() && !state.Rules.IsUnknown() {
+		diagnostics.Append(state.Rules.ElementsAs(ctx, &prior, false)...)
+	}
 	models := make([]FirewallRuleModel, 0, len(firewall.Rules))
-	for _, rule := range firewall.Rules {
+	for i, rule := range firewall.Rules {
 		model := FirewallRuleModel{Direction: types.StringValue(rule.Direction), Protocol: types.StringValue(rule.Protocol), Ports: types.StringNull(), Description: types.StringNull()}
 		if rule.Ports != nil {
 			model.Ports = types.StringValue(*rule.Ports)
@@ -204,6 +208,11 @@ func setFirewallModel(ctx context.Context, state *FirewallResourceModel, firewal
 		}
 		model.Sources = firewallStringList(ctx, rule.Sources, diagnostics)
 		model.Destinations = firewallStringList(ctx, rule.Destinations, diagnostics)
+		// The API expands an omitted list to "anywhere"; keep it null when the configuration left it out.
+		if i < len(prior) {
+			model.Sources = keepOmittedAnywhere(prior[i].Sources, rule.Sources, model.Sources)
+			model.Destinations = keepOmittedAnywhere(prior[i].Destinations, rule.Destinations, model.Destinations)
+		}
 		models = append(models, model)
 	}
 	attrTypes := map[string]attr.Type{
@@ -227,4 +236,27 @@ func firewallStringList(ctx context.Context, values []string, diagnostics *diag.
 	list, diags := types.ListValueFrom(ctx, types.StringType, values)
 	diagnostics.Append(diags...)
 	return list
+}
+
+func keepOmittedAnywhere(prior types.List, api []string, current types.List) types.List {
+	if prior.IsUnknown() || !isAnywhere(api) {
+		return current
+	}
+	if prior.IsNull() {
+		return types.ListNull(types.StringType)
+	}
+	if len(prior.Elements()) == 0 {
+		return prior
+	}
+	return current
+}
+
+func isAnywhere(addresses []string) bool {
+	if len(addresses) == 0 {
+		return true
+	}
+	if len(addresses) != 2 {
+		return false
+	}
+	return (addresses[0] == "0.0.0.0/0" && addresses[1] == "::/0") || (addresses[0] == "::/0" && addresses[1] == "0.0.0.0/0")
 }

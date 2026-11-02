@@ -137,13 +137,19 @@ func TestProviderConfigureRequiresToken(t *testing.T) {
 func TestProviderRegistersResourcesAndDataSources(t *testing.T) {
 	provider := &FFXFProvider{}
 	resources := provider.Resources(context.Background())
-	if len(resources) != 7 {
-		t.Fatalf("Resources() returned %d entries, want 7", len(resources))
-	}
 	wantResourceNames := map[string]bool{
 		"ffxf_instance": false, "ffxf_vpc": false, "ffxf_firewall": false,
 		"ffxf_firewall_member": false, "ffxf_load_balancer": false,
 		"ffxf_load_balancer_pool": false, "ffxf_load_balancer_listener": false,
+		"ffxf_vm_ipv6_address": false, "ffxf_vm_rdns": false, "ffxf_vm_power_state": false,
+		"ffxf_vm_reinstall": false, "ffxf_vm_backup_restore": false,
+		"ffxf_ssh_key": false, "ffxf_vpc_member": false, "ffxf_account_budget": false,
+		"ffxf_database": false, "ffxf_database_user": false, "ffxf_database_logical_database": false,
+		"ffxf_database_extension": false, "ffxf_database_public_access": false, "ffxf_database_backup": false,
+		"ffxf_database_fork": false, "ffxf_database_restore": false, "ffxf_database_detach": false,
+	}
+	if len(resources) != len(wantResourceNames) {
+		t.Fatalf("Resources() returned %d entries, want %d", len(resources), len(wantResourceNames))
 	}
 	for _, newResource := range resources {
 		registeredResource := newResource()
@@ -161,12 +167,17 @@ func TestProviderRegistersResourcesAndDataSources(t *testing.T) {
 	}
 
 	dataSources := provider.DataSources(context.Background())
-	if len(dataSources) != 6 {
-		t.Fatalf("DataSources() returned %d entries, want 6", len(dataSources))
-	}
 	wantNames := map[string]bool{
 		"ffxf_region": false, "ffxf_plan": false, "ffxf_image": false,
 		"ffxf_firewalls": false, "ffxf_load_balancers": false, "ffxf_load_balancer_metrics": false,
+		"ffxf_vms": false, "ffxf_vm_network": false, "ffxf_vm_metrics": false, "ffxf_vm_backups": false, "ffxf_vm_actions": false,
+		"ffxf_plans": false, "ffxf_images": false, "ffxf_vpcs": false, "ffxf_ssh_keys": false,
+		"ffxf_account": false, "ffxf_usage": false, "ffxf_runners": false, "ffxf_runner_jobs": false,
+		"ffxf_databases": false, "ffxf_database_options": false, "ffxf_database_credentials": false,
+		"ffxf_database_backups": false, "ffxf_database_metrics": false, "ffxf_database_queries": false,
+	}
+	if len(dataSources) != len(wantNames) {
+		t.Fatalf("DataSources() returned %d entries, want %d", len(dataSources), len(wantNames))
 	}
 	for _, newDataSource := range dataSources {
 		dataSource := newDataSource()

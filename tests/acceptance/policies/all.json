@@ -1,0 +1,57 @@
+{
+  "version": "2026-10-01",
+  "statements": [
+    {
+      "effect": "allow",
+      "actions": [
+        "action:read",
+        "billing:read",
+        "database.credential:read",
+        "database.logical:create",
+        "database.logical:delete",
+        "database.user:create",
+        "database.user:delete",
+        "database:create",
+        "database:delete",
+        "database:fork",
+        "database:read",
+        "firewall.member:create",
+        "firewall.member:delete",
+        "firewall:create",
+        "firewall:delete",
+        "firewall:read",
+        "firewall:update",
+        "load-balancer.listener:create",
+        "load-balancer.listener:delete",
+        "load-balancer.listener:update",
+        "load-balancer.pool:create",
+        "load-balancer.pool:delete",
+        "load-balancer.pool:update",
+        "load-balancer.target:update",
+        "load-balancer:create",
+        "load-balancer:delete",
+        "load-balancer:read",
+        "load-balancer:update",
+        "sshkey:create",
+        "sshkey:delete",
+        "sshkey:read",
+        "vm.backup:read",
+        "vm.ipv*:create",
+        "vm.ipv*:delete",
+        "vm:action",
+        "vm:create",
+        "vm:delete",
+        "vm:read",
+        "vm:update",
+        "vpc.member:create",
+        "vpc.member:delete",
+        "vpc:create",
+        "vpc:delete",
+        "vpc:read"
+      ],
+      "resources": [
+        "*"
+      ]
+    }
+  ]
+}

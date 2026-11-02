@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -17,6 +19,7 @@ var ErrVPCNotFound = errors.New("VPC not found")
 type Client struct {
 	BaseURL    string
 	Token      string
+	TokenFile  string
 	HTTPClient *http.Client
 }
 
@@ -29,6 +32,19 @@ func NewClient(baseURL, token string) *Client {
 		Token:      token,
 		HTTPClient: &http.Client{Timeout: 30 * time.Second},
 	}
+}
+
+// bearerToken returns the freshest credential. When TokenFile is set and
+// readable, it wins over Token so short-lived tokens can be rotated mid-run.
+func (c *Client) bearerToken() string {
+	if c.TokenFile != "" {
+		if data, err := os.ReadFile(c.TokenFile); err == nil {
+			if token := strings.TrimSpace(string(data)); token != "" {
+				return token
+			}
+		}
+	}
+	return c.Token
 }
 
 type CreateVmRequest struct {
@@ -66,6 +82,7 @@ type VM struct {
 	Billing  struct {
 		Mode string `json:"mode"`
 	} `json:"billing"`
+	VMAreaIPv6 *string `json:"ipv6"`
 }
 
 type VMResponse struct {
@@ -199,7 +216,7 @@ func (c *Client) CreateVPC(ctx context.Context, req CreateVPCRequest) (*VPCRespo
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	httpReq.Header.Set("Authorization", "Bearer "+c.bearerToken())
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	res, err := c.HTTPClient.Do(httpReq)
@@ -208,7 +225,7 @@ func (c *Client) CreateVPC(ctx context.Context, req CreateVPCRequest) (*VPCRespo
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("API HTTP error %d during VPC creation", res.StatusCode)
+		return nil, fmt.Errorf("API HTTP error %d during VPC creation%s", res.StatusCode, apiErrorDetail(res))
 	}
 
 	var result VPCResponse
@@ -224,7 +241,7 @@ func (c *Client) GetVPC(ctx context.Context, vpcID int64) (*VPCResponse, error) 
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	httpReq.Header.Set("Authorization", "Bearer "+c.bearerToken())
 
 	res, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
@@ -235,7 +252,7 @@ func (c *Client) GetVPC(ctx context.Context, vpcID int64) (*VPCResponse, error) 
 		return nil, ErrVPCNotFound
 	}
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API HTTP error %d during VPC read", res.StatusCode)
+		return nil, fmt.Errorf("API HTTP error %d during VPC read%s", res.StatusCode, apiErrorDetail(res))
 	}
 
 	var result VPCResponse
@@ -250,7 +267,7 @@ func (c *Client) DeleteVPC(ctx context.Context, vpcID int64) error {
 	if err != nil {
 		return err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	httpReq.Header.Set("Authorization", "Bearer "+c.bearerToken())
 
 	res, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
@@ -258,7 +275,7 @@ func (c *Client) DeleteVPC(ctx context.Context, vpcID int64) error {
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusNoContent && res.StatusCode != http.StatusNotFound {
-		return fmt.Errorf("API HTTP error %d during VPC deletion", res.StatusCode)
+		return fmt.Errorf("API HTTP error %d during VPC deletion%s", res.StatusCode, apiErrorDetail(res))
 	}
 	return nil
 }
@@ -268,7 +285,7 @@ func (c *Client) get(ctx context.Context, path string, target any) error {
 	if err != nil {
 		return err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	httpReq.Header.Set("Authorization", "Bearer "+c.bearerToken())
 
 	res, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
@@ -277,7 +294,7 @@ func (c *Client) get(ctx context.Context, path string, target any) error {
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("API HTTP error %d during GET %s", res.StatusCode, path)
+		return fmt.Errorf("API HTTP error %d during GET %s%s", res.StatusCode, path, apiErrorDetail(res))
 	}
 	if err := json.NewDecoder(res.Body).Decode(target); err != nil {
 		return err
@@ -293,7 +310,7 @@ func (c *Client) CreateVM(ctx context.Context, req CreateVmRequest, idempotencyK
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	httpReq.Header.Set("Authorization", "Bearer "+c.bearerToken())
 	httpReq.Header.Set("Idempotency-Key", idempotencyKey)
 
 	res, err := c.HTTPClient.Do(httpReq)
@@ -303,7 +320,7 @@ func (c *Client) CreateVM(ctx context.Context, req CreateVmRequest, idempotencyK
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusAccepted && res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API HTTP error %d during creation", res.StatusCode)
+		return nil, fmt.Errorf("API HTTP error %d during creation%s", res.StatusCode, apiErrorDetail(res))
 	}
 
 	var result CreateVmResponse
@@ -319,7 +336,7 @@ func (c *Client) GetVM(ctx context.Context, vmID int64) (*VMResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	httpReq.Header.Set("Authorization", "Bearer "+c.bearerToken())
 
 	res, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
@@ -331,7 +348,7 @@ func (c *Client) GetVM(ctx context.Context, vmID int64) (*VMResponse, error) {
 		return nil, ErrVMNotFound
 	}
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API HTTP error %d during read", res.StatusCode)
+		return nil, fmt.Errorf("API HTTP error %d during read%s", res.StatusCode, apiErrorDetail(res))
 	}
 
 	var result VMResponse
@@ -352,7 +369,7 @@ func (c *Client) UpdateVM(ctx context.Context, vmID int64, hostname string) (*VM
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+	httpReq.Header.Set("Authorization", "Bearer "+c.bearerToken())
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	res, err := c.HTTPClient.Do(httpReq)
@@ -362,7 +379,7 @@ func (c *Client) UpdateVM(ctx context.Context, vmID int64, hostname string) (*VM
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API HTTP error %d during update", res.StatusCode)
+		return nil, fmt.Errorf("API HTTP error %d during update%s", res.StatusCode, apiErrorDetail(res))
 	}
 
 	var result VMResponse
@@ -383,7 +400,7 @@ func (c *Client) WaitForAction(ctx context.Context, actionID int) error {
 			return ctx.Err()
 		case <-ticker.C:
 			httpReq, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/actions/%d", c.BaseURL, actionID), nil)
-			httpReq.Header.Set("Authorization", "Bearer "+c.Token)
+			httpReq.Header.Set("Authorization", "Bearer "+c.bearerToken())
 
 			res, err := c.HTTPClient.Do(httpReq)
 			if err != nil {
@@ -409,19 +426,6 @@ func (c *Client) WaitForAction(ctx context.Context, actionID int) error {
 }
 
 func (c *Client) DeleteVM(ctx context.Context, vmID int, hostname string) error {
-	url := fmt.Sprintf("%s/vms/%d?confirm=%s&when=now", c.BaseURL, vmID, hostname)
-	httpReq, _ := http.NewRequestWithContext(ctx, "DELETE", url, nil)
-	httpReq.Header.Set("Authorization", "Bearer "+c.Token)
-
-	res, err := c.HTTPClient.Do(httpReq)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusAccepted && res.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to delete VM, HTTP status code %d", res.StatusCode)
-	}
-
-	return nil
+	_, err := c.VMAreaDeleteVMWithAction(ctx, vmID, hostname, "now")
+	return err
 }

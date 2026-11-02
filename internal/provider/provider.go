@@ -48,7 +48,7 @@ func (p *FFXFProvider) Schema(ctx context.Context, req provider.SchemaRequest, r
 			"token": schema.StringAttribute{
 				Optional:    true,
 				Sensitive:   true,
-				Description: "FFXF Cloud API token. If omitted, the provider reads FFXF_TOKEN from the environment.",
+				Description: "FFXF Cloud API token. If omitted, the provider reads FFXF_TOKEN from the environment. When FFXF_TOKEN_FILE points to a readable file, its content is re-read on every request and takes precedence, which lets short-lived tokens be rotated during long applies.",
 			},
 		},
 	}
@@ -81,12 +81,13 @@ func (p *FFXFProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 	}
 
 	apiClient := client.NewClient(endpoint, token)
+	apiClient.TokenFile = os.Getenv("FFXF_TOKEN_FILE")
 	resp.DataSourceData = apiClient
 	resp.ResourceData = apiClient
 }
 
 func (p *FFXFProvider) Resources(ctx context.Context) []func() resource.Resource {
-	return []func() resource.Resource{
+	resources := []func() resource.Resource{
 		NewInstanceResource,
 		NewVPCResource,
 		NewFirewallResource,
@@ -95,10 +96,14 @@ func (p *FFXFProvider) Resources(ctx context.Context) []func() resource.Resource
 		NewLoadBalancerPoolResource,
 		NewLoadBalancerListenerResource,
 	}
+	resources = append(resources, vmAreaResources()...)
+	resources = append(resources, accountAreaResources()...)
+	resources = append(resources, databaseAreaResources()...)
+	return resources
 }
 
 func (p *FFXFProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{
+	dataSources := []func() datasource.DataSource{
 		NewRegionDataSource,
 		NewPlanDataSource,
 		NewImageDataSource,
@@ -106,4 +111,8 @@ func (p *FFXFProvider) DataSources(ctx context.Context) []func() datasource.Data
 		NewLoadBalancersDataSource,
 		NewLoadBalancerMetricsDataSource,
 	}
+	dataSources = append(dataSources, vmAreaDataSources()...)
+	dataSources = append(dataSources, accountAreaDataSources()...)
+	dataSources = append(dataSources, databaseAreaDataSources()...)
+	return dataSources
 }

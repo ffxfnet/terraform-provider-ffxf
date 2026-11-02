@@ -2,19 +2,57 @@ name: OIDC acceptance test
 
 on:
   workflow_dispatch:
+    inputs:
+      area:
+        description: Resource area to test. "all" runs vm, account and loadbalancer, plus the beta areas when enable_beta is set.
+        type: choice
+        options: [all, vm, loadbalancer, database, account, runners]
+        default: all
+      enable_beta:
+        description: With area "all", also run the beta areas (database, runners). Billed; needs beta access.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
   id-token: write
 
 jobs:
-  vm-lifecycle:
+  plan:
     if: startsWith(github.ref, 'refs/heads/')
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - id: matrix
+        env:
+          AREA: ${{ inputs.area }}
+          ENABLE_BETA: ${{ inputs.enable_beta }}
+        run: |
+          # Each area is its own job so a failure in one never hides the others, and each can be bound to its own OIDC role.
+          areas='["vm","account","loadbalancer"]'
+          if [ "$ENABLE_BETA" = "true" ]; then areas='["vm","account","loadbalancer","database","runners"]'; fi
+          if [ "$AREA" != "all" ]; then areas="[\"$AREA\"]"; fi
+          echo "matrix={\"area\":$areas}" >> "$GITHUB_OUTPUT"
+
+  acceptance:
+    name: ${{ matrix.area }}
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    # One area at a time per branch, and a cancelled run still reaches the destroy step below.
+    concurrency:
+      group: acceptance-${{ matrix.area }}-${{ github.ref }}
+      cancel-in-progress: false
     env:
       TF_VAR_run_id: ${{ github.run_id }}
       TF_VAR_run_attempt: ${{ github.run_attempt }}
       OIDC_AUDIENCE: ffxf-oidc-h3x1pbji8lkwjvyzqnzse3h0ploa1ers6uh91y3g
+    defaults:
+      run:
+        working-directory: tests/acceptance/${{ matrix.area }}
     steps:
       - uses: actions/checkout@v4
 
@@ -25,11 +63,9 @@ jobs:
 
       - uses: opentofu/setup-opentofu@v1
 
-      - name: Validate GitHub OIDC token with read-only API call
-        run: bash tests/acceptance/oidc-smoke.sh
-
       - name: Build provider and configure local override
         id: provider
+        working-directory: ${{ github.workspace }}
         run: |
           mkdir -p "$RUNNER_TEMP/ffxf-provider"
           go build -o "$RUNNER_TEMP/ffxf-provider/terraform-provider-ffxf" .
@@ -43,21 +79,37 @@ jobs:
           EOF
           echo "TF_CLI_CONFIG_FILE=$RUNNER_TEMP/ffxf.tfrc" >> "$GITHUB_ENV"
 
-      - name: Create VM with GitHub OIDC
-        working-directory: tests/acceptance
+      - name: Create ${{ matrix.area }} resources with GitHub OIDC
         run: |
-          oidc_token="$(curl --fail --silent --show-error \
-            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUDIENCE}" | jq --exit-status --raw-output '.value')"
+          fetch_token() {
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUDIENCE}" | jq --exit-status --raw-output '.value'
+          }
+          export FFXF_TOKEN_FILE="$RUNNER_TEMP/ffxf-token"
+          oidc_token="$(fetch_token)"
           echo "::add-mask::$oidc_token"
+          printf '%s' "$oidc_token" > "$FFXF_TOKEN_FILE"
+          # GitHub OIDC tokens expire after about 5 minutes; keep the file fresh for long applies.
+          (while sleep 120; do fetch_token > "$FFXF_TOKEN_FILE.new" && mv "$FFXF_TOKEN_FILE.new" "$FFXF_TOKEN_FILE"; done) &
+          refresher=$!
+          trap 'kill $refresher' EXIT
           FFXF_TOKEN="$oidc_token" tofu apply -input=false -auto-approve
 
-      - name: Destroy VM with GitHub OIDC
+      - name: Destroy ${{ matrix.area }} resources with GitHub OIDC
         if: ${{ always() && steps.provider.outcome == 'success' }}
-        working-directory: tests/acceptance
         run: |
-          oidc_token="$(curl --fail --silent --show-error \
-            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUDIENCE}" | jq --exit-status --raw-output '.value')"
+          fetch_token() {
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+              "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUDIENCE}" | jq --exit-status --raw-output '.value'
+          }
+          export FFXF_TOKEN_FILE="$RUNNER_TEMP/ffxf-token"
+          oidc_token="$(fetch_token)"
           echo "::add-mask::$oidc_token"
+          printf '%s' "$oidc_token" > "$FFXF_TOKEN_FILE"
+          # GitHub OIDC tokens expire after about 5 minutes; keep the file fresh for long applies.
+          (while sleep 120; do fetch_token > "$FFXF_TOKEN_FILE.new" && mv "$FFXF_TOKEN_FILE.new" "$FFXF_TOKEN_FILE"; done) &
+          refresher=$!
+          trap 'kill $refresher' EXIT
           FFXF_TOKEN="$oidc_token" tofu destroy -input=false -auto-approve

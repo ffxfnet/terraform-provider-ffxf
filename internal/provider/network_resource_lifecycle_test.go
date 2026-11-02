@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -146,6 +147,10 @@ func TestFirewallMemberResourceLifecycle(t *testing.T) {
 }
 
 func TestLoadBalancerResourceLifecycle(t *testing.T) {
+	oldInterval, oldTimeout := databasePollInterval, databasePollTimeout
+	databasePollInterval, databasePollTimeout = time.Millisecond, time.Second
+	defer func() { databasePollInterval, databasePollTimeout = oldInterval, oldTimeout }()
+	deleted := false
 	const lbJSON = `{"data":{"id":8,"name":"edge","status":"active","vpc":12,"ipv4":"192.0.2.8","ipv6":"2001:db8::8","dns_name":"edge.example.test","config_applied":true,"last_seen_at":"2026-10-06T12:00:00Z","last_error":null,"pools":[],"listeners":[],"certificates":[{"hostname":"app.example.test","status":"active","expires_at":"2026-11-06T12:00:00Z","error":null}],"billing":{"mode":"hourly","rate":"0.010","currency":"CAD"},"created_at":"2026-10-06T12:00:00Z"}}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method + " " + r.URL.Path {
@@ -156,8 +161,13 @@ func TestLoadBalancerResourceLifecycle(t *testing.T) {
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(lbJSON))
 		case "GET /load-balancers/8", "PATCH /load-balancers/8":
+			if deleted {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			_, _ = w.Write([]byte(lbJSON))
 		case "DELETE /load-balancers/8":
+			deleted = true
 			w.WriteHeader(http.StatusAccepted)
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
