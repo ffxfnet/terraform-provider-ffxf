@@ -147,6 +147,7 @@ func TestProviderRegistersResourcesAndDataSources(t *testing.T) {
 		"ffxf_database": false, "ffxf_database_user": false, "ffxf_database_logical_database": false,
 		"ffxf_database_extension": false, "ffxf_database_public_access": false, "ffxf_database_backup": false,
 		"ffxf_database_fork": false, "ffxf_database_restore": false, "ffxf_database_detach": false,
+		"ffxf_policy": false, "ffxf_role": false, "ffxf_api_key": false, "ffxf_oidc_binding": false,
 	}
 	if len(resources) != len(wantResourceNames) {
 		t.Fatalf("Resources() returned %d entries, want %d", len(resources), len(wantResourceNames))
@@ -171,6 +172,7 @@ func TestProviderRegistersResourcesAndDataSources(t *testing.T) {
 		"ffxf_region": false, "ffxf_plan": false, "ffxf_image": false,
 		"ffxf_firewalls": false, "ffxf_load_balancers": false, "ffxf_load_balancer_metrics": false,
 		"ffxf_vms": false, "ffxf_vm_network": false, "ffxf_vm_metrics": false, "ffxf_vm_backups": false, "ffxf_vm_actions": false,
+		"ffxf_policies": false, "ffxf_roles": false, "ffxf_oidc_providers": false, "ffxf_api_keys": false,
 		"ffxf_plans": false, "ffxf_images": false, "ffxf_vpcs": false, "ffxf_ssh_keys": false,
 		"ffxf_account": false, "ffxf_usage": false, "ffxf_runners": false, "ffxf_runner_jobs": false,
 		"ffxf_databases": false, "ffxf_database_options": false, "ffxf_database_credentials": false,

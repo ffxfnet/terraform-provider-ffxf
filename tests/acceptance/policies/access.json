@@ -1,0 +1,29 @@
+{
+  "version": "2026-10-01",
+  "statements": [
+    {
+      "effect": "allow",
+      "actions": [
+        "api-key:create",
+        "api-key:delete",
+        "api-key:read",
+        "oidc-binding:create",
+        "oidc-binding:delete",
+        "oidc-binding:read",
+        "oidc-binding:update",
+        "oidc-provider:read",
+        "policy:create",
+        "policy:delete",
+        "policy:read",
+        "policy:update",
+        "role:create",
+        "role:delete",
+        "role:read",
+        "role:update"
+      ],
+      "resources": [
+        "*"
+      ]
+    }
+  ]
+}
