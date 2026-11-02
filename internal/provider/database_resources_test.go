@@ -722,6 +722,10 @@ func TestDatabaseValidatorsRejectBadRestoreAndNumericValues(t *testing.T) {
 }
 
 func TestDatabaseResourceOptionalCreateReadAndDelete(t *testing.T) {
+	oldInterval, oldTimeout := databasePollInterval, databasePollTimeout
+	databasePollInterval, databasePollTimeout = time.Millisecond, time.Second
+	defer func() { databasePollInterval, databasePollTimeout = oldInterval, oldTimeout }()
+	deleted := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/databases" {
 			var body map[string]any
@@ -736,10 +740,15 @@ func TestDatabaseResourceOptionalCreateReadAndDelete(t *testing.T) {
 			return
 		}
 		if r.Method == http.MethodGet && r.URL.Path == "/databases/33" {
+			if deleted {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			_, _ = w.Write([]byte(`{"data":{"id":33,"name":"orders","status":"active","engine":"mysql","version":"8.4","vpc":8,"size_gb":4,"created_at":"2026-01-01T00:00:00Z"}}`))
 			return
 		}
 		if r.Method == http.MethodDelete && r.URL.Path == "/databases/33" {
+			deleted = true
 			w.WriteHeader(http.StatusAccepted)
 			return
 		}
@@ -825,5 +834,64 @@ func TestDatabaseResourceCreateKeepsStateWhenReadinessFails(t *testing.T) {
 	_ = response.State.Get(context.Background(), &got)
 	if got.ID.ValueInt64() != 12 {
 		t.Fatalf("created database must stay in state so it can be destroyed, got %#v", got)
+	}
+}
+
+func TestDatabaseDeleteWaitsUntilDatabaseIsGone(t *testing.T) {
+	oldInterval, oldTimeout := databasePollInterval, databasePollTimeout
+	databasePollInterval, databasePollTimeout = time.Millisecond, time.Second
+	defer func() { databasePollInterval, databasePollTimeout = oldInterval, oldTimeout }()
+	gets := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusAccepted)
+		case http.MethodGet:
+			gets++
+			if gets < 3 {
+				_, _ = w.Write([]byte(`{"data":{"id":12,"status":"deleting"}}`))
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	r := &databaseResource{client: testAPIClient(server)}
+	state := newDatabaseState(t, databaseResourceModel{ID: types.Int64Value(12), Name: types.StringValue("orders"), VPC: types.Int64Value(8)})
+	response := resource.DeleteResponse{}
+	r.Delete(context.Background(), resource.DeleteRequest{State: state}, &response)
+	if response.Diagnostics.HasError() || gets < 3 {
+		t.Fatalf("Delete must poll until 404, gets=%d diagnostics=%v", gets, response.Diagnostics)
+	}
+}
+
+func TestDatabaseUserCreateResolvesUnknownReadOnly(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"data":{"username":"app","password":"secret"}}`))
+	}))
+	defer server.Close()
+	r := &databaseChildResource{client: testAPIClient(server), kind: "user"}
+	var schemaResponse resource.SchemaResponse
+	r.Schema(context.Background(), resource.SchemaRequest{}, &schemaResponse)
+	objectType := schemaResponse.Schema.Type().TerraformType(context.Background()).(tftypes.Object)
+	values := map[string]tftypes.Value{}
+	for name, typ := range objectType.AttributeTypes {
+		values[name] = tftypes.NewValue(typ, nil)
+	}
+	values["database_id"] = tftypes.NewValue(objectType.AttributeTypes["database_id"], int64(9))
+	values["username"] = tftypes.NewValue(objectType.AttributeTypes["username"], "app")
+	values["read_only"] = tftypes.NewValue(objectType.AttributeTypes["read_only"], tftypes.UnknownValue)
+	plan := tfsdk.Plan{Schema: schemaResponse.Schema, Raw: tftypes.NewValue(objectType, values)}
+	response := resource.CreateResponse{State: tfsdk.State{Schema: schemaResponse.Schema}}
+	r.Create(context.Background(), resource.CreateRequest{Plan: plan}, &response)
+	if response.Diagnostics.HasError() {
+		t.Fatalf("Create: %v", response.Diagnostics)
+	}
+	var created types.Object
+	response.Diagnostics.Append(response.State.Get(context.Background(), &created)...)
+	readOnly := created.Attributes()["read_only"].(types.Bool)
+	if response.Diagnostics.HasError() || readOnly.IsUnknown() || readOnly.IsNull() || readOnly.ValueBool() {
+		t.Fatalf("read_only must resolve to a known false, got %v (%v)", readOnly, response.Diagnostics)
 	}
 }

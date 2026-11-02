@@ -15,6 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -218,6 +219,33 @@ func (r *databaseResource) Delete(ctx context.Context, req resource.DeleteReques
 	err := r.client.DatabaseDelete(ctx, state.ID.ValueInt64())
 	if err != nil && !errors.Is(err, client.ErrNetworkResourceNotFound) {
 		resp.Diagnostics.AddError("Error deleting FFXF database", err.Error())
+		return
+	}
+	if err == nil {
+		if waitErr := databaseWaitGone(ctx, r.client, state.ID.ValueInt64()); waitErr != nil {
+			resp.Diagnostics.AddError("Error waiting for FFXF database deletion", waitErr.Error())
+		}
+	}
+}
+
+// databaseWaitGone blocks until the asynchronous deletion finishes, because the
+// attached VPC cannot be deleted while the database still exists.
+func databaseWaitGone(ctx context.Context, apiClient *client.Client, id int64) error {
+	pollCtx, cancel := context.WithTimeout(ctx, databasePollTimeout)
+	defer cancel()
+	ticker := time.NewTicker(databasePollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-pollCtx.Done():
+			return fmt.Errorf("database %d was not deleted before timeout: %w", id, pollCtx.Err())
+		case <-ticker.C:
+			if _, err := apiClient.DatabaseGet(pollCtx, id); errors.Is(err, client.ErrNetworkResourceNotFound) {
+				return nil
+			} else if err != nil {
+				return err
+			}
+		}
 	}
 }
 
@@ -485,7 +513,7 @@ func (r *databaseChildResource) Schema(_ context.Context, _ resource.SchemaReque
 	case "user":
 		attributes["username"] = schema.StringAttribute{Required: true, Description: "Username to create or manage.", PlanModifiers: replaceString}
 		attributes["databases"] = schema.ListAttribute{Optional: true, ElementType: types.StringType, Description: "Logical databases this user can access; null grants the API default."}
-		attributes["read_only"] = schema.BoolAttribute{Optional: true, Computed: true, Description: "Whether the user is restricted to read-only access."}
+		attributes["read_only"] = schema.BoolAttribute{Optional: true, Computed: true, Description: "Whether the user is restricted to read-only access.", PlanModifiers: []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()}}
 		attributes["password_rotation_trigger"] = schema.StringAttribute{Optional: true, Description: "Change this value to request a password reset."}
 		attributes["password"] = schema.StringAttribute{Computed: true, Sensitive: true, Description: "Password returned by create or password reset. The API does not return it on subsequent reads."}
 	case "logical_database":
@@ -548,6 +576,15 @@ func (r *databaseChildResource) Create(ctx context.Context, req resource.CreateR
 				return
 			}
 			attrs["password"] = password
+			if value, ok := attrs["read_only"].(types.Bool); ok && value.IsUnknown() {
+				var created struct {
+					Data struct {
+						ReadOnly bool `json:"read_only"`
+					} `json:"data"`
+				}
+				_ = json.Unmarshal(result["data"], &created.Data)
+				attrs["read_only"] = types.BoolValue(created.Data.ReadOnly)
+			}
 		}
 		attrs["id"] = types.StringValue(fmt.Sprintf("%d/%s", id, username))
 	case "logical_database":
