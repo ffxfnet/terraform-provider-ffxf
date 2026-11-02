@@ -99,6 +99,7 @@ func (p *FFXFProvider) Resources(ctx context.Context) []func() resource.Resource
 	resources = append(resources, vmAreaResources()...)
 	resources = append(resources, accountAreaResources()...)
 	resources = append(resources, databaseAreaResources()...)
+	resources = append(resources, accessAreaResources()...)
 	return resources
 }
 
@@ -114,5 +115,6 @@ func (p *FFXFProvider) DataSources(ctx context.Context) []func() datasource.Data
 	dataSources = append(dataSources, vmAreaDataSources()...)
 	dataSources = append(dataSources, accountAreaDataSources()...)
 	dataSources = append(dataSources, databaseAreaDataSources()...)
+	dataSources = append(dataSources, accessAreaDataSources()...)
 	return dataSources
 }

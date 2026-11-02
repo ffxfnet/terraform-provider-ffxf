@@ -70,12 +70,23 @@ The OIDC acceptance workflow (`.github/workflows/acceptance.yml`) runs one job p
 |---|---|---|
 | `vm` | SSH key, VPC, firewall, instance (with `ssh_keys`), firewall and VPC membership, power state, IPv6 address | VM inventory, metrics, backups, actions, network, plans, images, VPCs, SSH keys |
 | `account` | nothing | account, usage, plan and image catalogs |
+| `access` | policy, role, API key, OIDC binding (all new, so the workflow's own access is untouched) | policies, roles, API keys, OIDC providers |
 | `loadbalancer` | VPC, instance, VPC membership, load balancer, pool with the VM as target, listener | nothing |
 | `database` (beta) | VPC, managed database, fork, user, logical database | database options, credentials, inventory |
 | `runners` (beta) | nothing | runners, runner jobs |
 
-`all` runs `vm`, `account` and `loadbalancer`; set `enable_beta` to add `database` and `runners`, which are billed and need beta access. `ffxf_vm_reinstall`, `ffxf_vm_backup_restore` and `ffxf_account_budget` and `ffxf_database_restore` are not exercised there because they wipe a disk or change account-wide settings. Every resource and data source also has mock-based OpenTofu tests in `tests/terraform`, run with `sh tests/terraform/run.sh`.
+`all` runs `vm`, `account`, `access` and `loadbalancer`; set `enable_beta` to add `database` and `runners`, which are billed and need beta access. `ffxf_vm_reinstall`, `ffxf_vm_backup_restore` and `ffxf_account_budget` and `ffxf_database_restore` are not exercised there because they wipe a disk or change account-wide settings. Every resource and data source also has mock-based OpenTofu tests in `tests/terraform`, run with `sh tests/terraform/run.sh`.
 
 Grant only the permissions needed by the configuration. The OIDC binding acts through a role whose policies list `service:action` names; the access-management actions (`policy:*`, `role:*`, `api-key:*`, `oidc-*:*`) only control who can manage keys and bindings and do not authorize any of the calls below. A call outside the policies is refused with `403 insufficient_scope`. Catalog lookups for regions, plans, and images are public.
 
-Ready-to-paste policy documents for each acceptance area are in [`tests/acceptance/policies`](tests/acceptance/policies): `vm.json`, `account.json`, `loadbalancer.json`, `database.json`, `runners.json`, and `all.json` (their union). Create a policy from the document, attach it to a role, and select that role on the binding. `ffxf_account_budget` additionally needs `billing:update`, `ffxf_vm_rdns` needs `vm.rdns:update` (and a hostname that already resolves to the address), `ffxf_vm_reinstall` needs `vm:action`, and `ffxf_vm_backup_restore` needs `vm.backup:restore`. The documents write `vm.ipv*:create` instead of `vm.ipv6:create` because the console's action-name check does not accept digits.
+Ready-to-paste policy documents for each acceptance area are in [`tests/acceptance/policies`](tests/acceptance/policies): `vm.json`, `account.json`, `access.json`, `loadbalancer.json`, `database.json`, `runners.json`, and `all.json` (their union). Create a policy from the document, attach it to a role, and select that role on the binding. `ffxf_account_budget` additionally needs `billing:update`, `ffxf_vm_rdns` needs `vm.rdns:update` (and a hostname that already resolves to the address), `ffxf_vm_reinstall` needs `vm:action`, and `ffxf_vm_backup_restore` needs `vm.backup:restore`. The documents write `vm.ipv*:create` instead of `vm.ipv6:create` because the console's action-name check does not accept digits.
+
+## Access management
+
+`ffxf_policy`, `ffxf_role`, `ffxf_api_key` and `ffxf_oidc_binding` manage who may call the API, and `ffxf_policies`, `ffxf_roles`, `ffxf_api_keys` and `ffxf_oidc_providers` read them. Caveats:
+
+- Writes are refused for temporary (`ffxf_at_`) tokens; authenticate with an API key or a direct OIDC token.
+- A credential cannot modify a role or policy it holds or can assume, nor its own binding.
+- A role still used by a key or binding cannot be deleted or emptied, and a policy attached to a role cannot be deleted.
+- `ffxf_api_key` has no update: any change replaces it. Its secret `token` is only returned at creation and is stored (sensitive) in state; it is empty after an import.
+- OIDC providers are read-only. A binding must include a `sub` claim condition naming its owner.
