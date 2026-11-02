@@ -12,6 +12,7 @@
         "database.user:delete",
         "database:create",
         "database:delete",
+        "database:fork",
         "database:read",
         "vpc:create",
         "vpc:delete",

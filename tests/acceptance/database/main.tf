@@ -57,3 +57,9 @@ data "ffxf_database_credentials" "acceptance" {
 data "ffxf_databases" "all" {
   depends_on = [ffxf_database.acceptance]
 }
+
+# A fork is a second billed database that takes several minutes to provision.
+resource "ffxf_database_fork" "acceptance" {
+  source_database_id = ffxf_database.acceptance.id
+  name               = "${local.name}-fork"
+}

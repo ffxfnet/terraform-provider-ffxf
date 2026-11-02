@@ -1,0 +1,28 @@
+{
+  "version": "2026-10-01",
+  "statements": [
+    {
+      "effect": "allow",
+      "actions": [
+        "action:read",
+        "load-balancer.listener:create",
+        "load-balancer.listener:delete",
+        "load-balancer.listener:update",
+        "load-balancer.pool:create",
+        "load-balancer.pool:delete",
+        "load-balancer.pool:update",
+        "load-balancer.target:update",
+        "load-balancer:create",
+        "load-balancer:delete",
+        "load-balancer:read",
+        "load-balancer:update",
+        "vpc:create",
+        "vpc:delete",
+        "vpc:read"
+      ],
+      "resources": [
+        "*"
+      ]
+    }
+  ]
+}

@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       area:
-        description: Resource area to test. "all" runs vm and account, plus the beta areas when enable_beta is set.
+        description: Resource area to test. "all" runs vm, account and loadbalancer, plus the beta areas when enable_beta is set.
         type: choice
-        options: [all, vm, database, account, runners]
+        options: [all, vm, loadbalancer, database, account, runners]
         default: all
       enable_beta:
         description: With area "all", also run the beta areas (database, runners). Billed; needs beta access.
@@ -30,8 +30,8 @@ jobs:
           ENABLE_BETA: ${{ inputs.enable_beta }}
         run: |
           # Each area is its own job so a failure in one never hides the others, and each can be bound to its own OIDC role.
-          areas='["vm","account"]'
-          if [ "$ENABLE_BETA" = "true" ]; then areas='["vm","account","database","runners"]'; fi
+          areas='["vm","account","loadbalancer"]'
+          if [ "$ENABLE_BETA" = "true" ]; then areas='["vm","account","loadbalancer","database","runners"]'; fi
           if [ "$AREA" != "all" ]; then areas="[\"$AREA\"]"; fi
           echo "matrix={\"area\":$areas}" >> "$GITHUB_OUTPUT"
 
