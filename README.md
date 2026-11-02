@@ -69,7 +69,7 @@ The OIDC acceptance workflow (`.github/workflows/acceptance.yml`) runs one job p
 | Area | What it creates and destroys | What it reads |
 |---|---|---|
 | `vm` | SSH key, VPC, firewall, instance (with `ssh_keys`), firewall and VPC membership, power state, IPv6 address | VM inventory, metrics, backups, actions, network, plans, images, VPCs, SSH keys |
-| `account` | nothing | account, usage, plan and image catalogs |
+| `account` | none (read-only: account, usage, catalog, and listings of every resource and access object) | account, usage, plan and image catalogs |
 | `access` | policy, role, API key, OIDC binding (all new, so the workflow's own access is untouched) | policies, roles, API keys, OIDC providers |
 | `loadbalancer` | VPC, instance, VPC membership, load balancer, pool with the VM as target, listener | nothing |
 | `database` (beta) | VPC, managed database, fork, user, logical database | database options, credentials, inventory |

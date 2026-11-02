@@ -4,7 +4,16 @@
     {
       "effect": "allow",
       "actions": [
-        "billing:read"
+        "api-key:read",
+        "billing:read",
+        "firewall:read",
+        "load-balancer:read",
+        "oidc-provider:read",
+        "policy:read",
+        "role:read",
+        "sshkey:read",
+        "vm:read",
+        "vpc:read"
       ],
       "resources": [
         "*"
